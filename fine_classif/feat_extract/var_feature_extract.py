@@ -56,6 +56,7 @@ def time_span(data):
     times = data_use.HJD.values
     max_t, min_t = np.max(times), np.min(times)
     span = max_t - min_t
+    
     return span
 
 
@@ -212,7 +213,7 @@ def source_feat_extract_lc(lightcurve, method='standard', ls_kwargs={}, amb_corr
     if all(np.diff(lc[lc_utils.find_time_field(lc)])>0):
         pass
     else:
-        return {'error':True}
+        raise ValueError("Light curve time array not ordered chronologically.")
     
     # Extract non-periodic and extra statistics 
     nonper_feats = magarr_stats(lc)
@@ -245,9 +246,6 @@ def combine_pool_lcs(lightcurves, classname, ls_kwargs, method='standard', ncore
     df - panda dataframe (n_sources x n_feats) of source features
     
     """
-    start=time.time()
-    print("Loading {} features...".format(classname))
-    
     # Commence multi-processor split
     pool = Pool(ncores)
     features = pool.map(partial(source_feat_extract_lc, ls_kwargs=ls_kwargs,
@@ -259,15 +257,10 @@ def combine_pool_lcs(lightcurves, classname, ls_kwargs, method='standard', ncore
     df = pd.DataFrame.from_dict(features)
     
     df['sourceid'] = pd.Series([i.sourceid.values[0] for i in lightcurves])
-    df['classname'] = pd.Series(len(df)*[classname])
-    
-    end=time.time()
-    taken = end-start
-    print("{} {} light-curve features extracted -- average time taken/lightcurve = {}".format(len(df), classname, taken/len(df)))
-    
-    df.to_pickle('{}_feats.pkl'.format(classname))
+    df['classname'] = pd.Series(len(df)*[classname])   
     
     return df
+
 
 def combine_pool_ids(sourceids, classname, ls_kwargs, method='standard', ncores=20):
     """
@@ -285,10 +278,7 @@ def combine_pool_ids(sourceids, classname, ls_kwargs, method='standard', ncores=
     
     df - panda dataframe (n_sources x n_feats) of source features
     
-    """
-    start=time.time()
-    print("Loading {} features...".format(classname))
-    
+    """    
     # Commence multi-processor split
     pool = Pool(ncores)
     features = pool.map(partial(source_feat_extract_id, ls_kwargs=ls_kwargs,
@@ -300,12 +290,6 @@ def combine_pool_ids(sourceids, classname, ls_kwargs, method='standard', ncores=
     
     df['sourceid'] = pd.Series(sourceids)
     df['classname'] = pd.Series(len(df)*[classname])
-    
-    end=time.time()
-    taken = end-start
-    print("{} {} light-curve features extracted -- average time taken/lightcurve = {}".format(len(df), classname, taken/len(df)))
-    
-    df.to_pickle('{}_feats.pkl'.format(classname))
     
     return df
 
@@ -330,7 +314,6 @@ def add_catalogue_info(df_feats, cm_df_name, ogle=True, colour=True):
     
     
     """
-    print("Adding OGLE + VVV catalogue info..")
     df_cm = pd.read_pickle('{}.pkl'.format(cm_df_name))
     
     df_feats = df_feats.drop_duplicates(subset=['sourceid']).dropna(subset=['sourceid'])
@@ -350,10 +333,7 @@ def add_catalogue_info(df_feats, cm_df_name, ogle=True, colour=True):
         
         df_match['JK_col'] = pd.Series(np.array((jmag - kmag) - jk_col_excess))
         df_match['HK_col'] = pd.Series(np.array((hmag - kmag) - hk_col_excess))
-    
-    
-    print("--Added OGLE + VVV catalogue information.")
-    
+        
     return df_match
 
 
@@ -375,8 +355,6 @@ def construct_final_df(df_feats):
     Finalise feature dataframe + include phases and amplitude unbiased features
     
     """
-    print("Loading final amp/phase features..")
-    
     df_use = df_feats.copy()
     
     # Taking amplitude ratios and phases differences after finding principal phases
@@ -409,8 +387,5 @@ def construct_final_df(df_feats):
                  'time_lag_mean','time_lag_median', 'max_time_lag']
 
     df_use = df_use.dropna(subset=data_cols)
-    print("{}% sources left in final dropna".format(100*round(len(df_use)/len(df_feats),4)))
-    
-    print("--Finalised feature dataframe.")
     
     return df_use
