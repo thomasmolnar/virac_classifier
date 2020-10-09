@@ -1,1 +1,0 @@
-### Directory containing all interfacing programs to output data structure previously used, from the Healpix structure stored on the cluster. 
