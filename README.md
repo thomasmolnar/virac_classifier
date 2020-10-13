@@ -10,4 +10,4 @@ This step includes the automatic construction/training of a Random Forest classi
 
 ### - Step 2 (dir = fine_classif): Fine-grain classification of subdivided tile areas.
 
-This is the second step in the hierarchical classification of virac2 sources. Based on periodic information of the source light curves, variability classes will be assigned to each source. In addition, probabilistic and goodness of fits of the periodic model will be included to sort the output into 'clean' subsets of vairble sources. 
+This is the second step in the hierarchical classification of virac2 sources. Based on periodic information of the source light curves, variability classes will be assigned to each source. In addition, probabilistic and goodness of fits of the periodic model will be included to sort the output into 'clean' subsets of variable sources. 
