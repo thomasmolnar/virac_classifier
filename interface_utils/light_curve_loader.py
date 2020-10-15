@@ -68,7 +68,7 @@ class lightcurve_loader(object):
             concat the final set of data frames from each file.
         """
         
-        sourceid = np.atleast_1d(sourceid_input)
+        sourceid = np.unique(np.atleast_1d(sourceid_input))
         
         # Find healpix of source
         r_index = np.searchsorted(self.healpix_grid['index'], 
@@ -101,13 +101,19 @@ class lightcurve_loader(object):
                                  for band in ["Z","Y","J","H","Ks"]], axis=0)
                 cols = ["catindexid","hfad_mag", "hfad_emag", "ambiguous_match", "ast_res_chisq", "chi"]
 
-                data = [np.concatenate(f["timeSeries"][col][:][required_index]) for col in cols]
+                ## This line takes the most time -- it is cheaper to select all elements with [:] and slice
+                ## if the number of light curves required >~1000 else cheaper to not select all
+                if len(required_index)>1000:
+                    data = [np.concatenate(f["timeSeries"][col][:][required_index]) for col in cols]
+                else:
+                    data = [np.concatenate(f["timeSeries"][col][required_index]) for col in cols]
+                    
                 cols.insert(0, "sourceid")
                 data.insert(0, np.repeat(sources[sorter], counts))
                 
                 # Now fill in the mjdobs and filter entries
-                sorter = np.argsort(ci['catindexid'][:])
-                indices = sorter[np.searchsorted(ci['catindexid'][:], data[1], sorter=sorter)]
+                sorter = np.argsort(ci['catindexid'])
+                indices = sorter[np.searchsorted(ci['catindexid'], data[1], sorter=sorter)]
 
                 for fld in "mjdobs", "filter":
                     cols.insert(2, fld)
@@ -162,40 +168,53 @@ def run_tests():
     np.random.seed(42)
     with h5py.File(file_path+'n512_2318830.hdf5', 'r') as f:
         s=f['sourceList']['sourceid'][:][np.sort(np.random.randint(0,55000,10))]
+    tt = time.time()
     rslt=ll(s)
+    print((time.time()-tt)*1000., 'ms')
     
     ## Testing against expected light curve
     assert(np.abs(np.sum(rslt[rslt['sourceid']==s[4]]['mag']-test_mag))<1e-2)
+    print((time.time()-tt)*1000., 'ms')
     
     # Passing a scalar
     assert(np.all(ll(s[4])==rslt[rslt['sourceid']==s[4]]))
+    print((time.time()-tt)*1000., 'ms')
 
     # Passing a one-element array
     assert(np.all(ll(np.array([s[4]]))==rslt[rslt['sourceid']==s[4]]))
+    print((time.time()-tt)*1000., 'ms')
 
     # Passing indices not sorted
     rl=ll(np.array([s[5],s[4]]))
     assert(np.all(rl[rl['sourceid']==s[5]]==rslt[rslt['sourceid']==s[5]]))
+    print((time.time()-tt)*1000., 'ms')
     assert(np.all(rl[rl['sourceid']==s[4]]==rslt[rslt['sourceid']==s[4]]))
+    print((time.time()-tt)*1000., 'ms')
 
     # Sourceid not in
     assert(len(ll([1]))==0)
+    print((time.time()-tt)*1000., 'ms')
     assert(len(ll(1))==0)
+    print((time.time()-tt)*1000., 'ms')
     
     # Sourceid not in and source in
     rl=ll(np.array([s[4],1]))
     assert(np.all(rl[rl['sourceid']==s[4]]==rslt[rslt['sourceid']==s[4]]))
+    print((time.time()-tt)*1000., 'ms')
     rl=ll(np.array([1,s[4]]))
     assert(np.all(rl[rl['sourceid']==s[4]]==rslt[rslt['sourceid']==s[4]]))
+    print((time.time()-tt)*1000., 'ms')
 
     # Sourceid not in and two source in
     rl=ll(np.array([s[5],1,s[4]]))
     assert(np.all(rl[rl['sourceid']==s[4]]==rslt[rslt['sourceid']==s[4]]))
+    print((time.time()-tt)*1000., 'ms')
     
     ## Big chunk
     with h5py.File(file_path+'n512_2318830.hdf5', 'r') as f:
         s=f['sourceList']['sourceid'][:][np.sort(np.random.randint(0,55000,24000))]
     rslt=ll(s)
+    print((time.time()-tt)*1000., 'ms')
     
 if __name__=="__main__":
     run_tests()
