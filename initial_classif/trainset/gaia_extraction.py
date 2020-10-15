@@ -9,55 +9,38 @@ from virac_classifier.wsdb_utils.wsdb_cred import wsdb_kwargs
 ### Code for the automatic extraction of constant stellar sources, based on population statistics of a predetermined variability measure in Gaia.
 ### WSDB Gaia DR2 (gaia_dr2.gaia_source) table specifications are used.
 
+def grab_virac_gaia_with_stats(l,b,sizel,sizeb,**wsdb_kwargs):
+    
+    sizel /= 60.
+    sizeb /= 60.
+    poly_string = "t.l>%0.3f and t.l<%0.3f and t.b>%0.3f and t.b<%0.3f"\
+                    %(l-.5*sizel,l+.5*sizel,b-.5*sizeb,b+.5*sizeb)
 
-def cm_virac_to_gaia(data, **wsdb_kwargs):
-    """
-    Crossmatch of tile sources to Gaia
-    ---
-    input: data = (RAJ2000, DECJ2000, sourceid)
+    if (l - .5 * sizel < 0.):
+        poly_string = "(t.l>%0.3f or t.l<%0.3f) and t.b>%0.3f and t.b<%0.3f"\
+                        %(l-.5*sizel+360.,l+.5*sizel,b-.5*sizeb,b+.5*sizeb)
+    if (l + .5 * sizel > 360.):
+        poly_string = "(t.l>%0.3f or t.l<%0.3f) and t.b>%0.3f and t.b<%0.3f"\
+                        %(l-.5*sizel,l+.5*sizel-360.,b-.5*sizeb,b+.5*sizeb)
     
-    return: Gaia DR2 photometry dataframe
+    data = pd.DataFrame(sqlutil.get("""
+            select t.*, 
+            g.phot_g_mean_flux_over_error, g.phot_g_mean_mag, g.phot_g_n_obs
+            from leigh_smith.virac2 as t
+            left join leigh_smith.virac2_x_gdr2 as x on t.sourceid=x.virac2_id
+            left join gaia_dr2.gaia_source as g on x.gdr2_id=g.source_id
+            where %s and duplicate=0 and astfit_params=5 and x.gdr2_id>0"""%poly_string, **wsdb_kwargs))
     
-    """
-    ra, dec, star = data['ra'], data['dec'], data['sourceid']
+#     data = pd.DataFrame(sqlutil.get("""
+#             select t.*, s.*,
+#             g.phot_g_mean_flux_over_error, g.phot_g_mean_mag, g.phot_g_n_obs
+#             from leigh_smith.virac2 as t
+#             left join leigh_smith.virac2_x_gdr2 as x on t.sourceid=x.virac2_id
+#             left join leigh_smith.virac2_var_indices_tmp as s on t.sourceid=s.sourceid
+#             left join gaia_dr2.gaia_source as g on x.gdr2_id=g.source_id
+#             where %s and duplicate=0 and astfit_params=5"""%poly_string, **wsdb_kwargs))
     
-    decaps = pd.DataFrame(sqlutil.local_join("""
-                select * from mytable as m
-                left join lateral (select *, q3c_dist(m.ra_virac, m.dec_virac, s.ra, s.dec)
-                from gaia_dr2.gaia_source as s 
-                where q3c_join(m.ra_virac, m.dec_virac, s.ra, s.dec,{0}/3600)
-                order by q3c_dist(m.ra_virac, m.dec_virac, s.ra, s.dec)
-                asc limit 1)
-                as tt on  true  order by xid """.format(cm_radius),
-                'mytable',
-                (ra,dec,star,np.arange(len(dec))),('ra_virac','dec_virac','virac_id',
-                                                   'xid'),**wsdb_kwargs))
-    
-    
-    gaia_cols = ['ra_virac','dec_virac','virac_id','source_id','ra', 'dec',
-                 'l', 'b', 'phot_g_n_obs','phot_g_mean_flux', 'phot_g_mean_flux_error',
-                 'phot_g_mean_mag']
-    
-    # Remove unsuccessful matches
-    decaps = decaps[gaia_cols].copy()
-    decaps = decaps.drop(decaps[decaps['virac_id']<0].index)
-    
-    return decaps
-    
-
-def binned_stats(x, values, nbins):
-    """
-    Calculate binned statistics 
-    """
-    meds, bin_edges, bin_number = stats.binned_statistic(x=x, values=values,
-                                                         statistic='median', bins=nbins)
-    med_sds, bin_edges_, bin_number_ = stats.binned_statistic(x=x, values=values,
-                                                              statistic='std', bins=nbins)
-    bin_width = (bin_edges[1] - bin_edges[0])
-    bin_centers = bin_edges[1:] - bin_width/2
-    
-    return meds, med_sds, bin_centers, bin_edges
-
+    return data
 
 def add_gvar_amp(df):
     """
@@ -65,22 +48,46 @@ def add_gvar_amp(df):
     amp = log(sqr(Nobs)flux_error/flux) all in G
     
     """
-    mean_flux = np.array(df["phot_g_mean_flux"])
-    mean_flux_error = np.array(df["phot_g_mean_flux_error"])
-    n_obs = np.array(df["phot_g_n_obs"])
+    mean_flux_over_error = df["phot_g_mean_flux_over_error"].values
+    n_obs = df["phot_g_n_obs"].values
     
     # Var computation
-    g_amp = np.log10(np.sqrt(n_obs)*(mean_flux_error/mean_flux))
+    g_amp = np.log10(np.sqrt(n_obs)/mean_flux_over_error)
     
-    df['g_amp'] = pd.Series(amp, dtype='float64')
+    df['g_amp'] = pd.Series(g_amp, dtype='float64')
     
     return df
 
+def running_stat(xvals,yvals,nbins=15,percentiles=[0.5,99.5],stat=np.nanstd, equal_counts=False, weights=None):
+    '''
+     Plots a running statistic between the 0.5th and 99.5th percentile -- bins equally spaced unless
+     equal_counts=True, then bins contain ~same number of stars
+    '''
+    rangex = np.nanpercentile(xvals,[percentiles[0],percentiles[1]])
+    bins = np.linspace(rangex[0],rangex[1],nbins)
+    if equal_counts:
+        bins = np.nanpercentile(xvals,np.linspace(percentiles[0],percentiles[1],nbins))
+    bc = .5*(bins[1:]+bins[:-1])
+    sd,m,su = np.nan*np.ones(np.shape(bc)), np.nan*np.ones(np.shape(bc)), np.nan*np.ones(np.shape(bc))
+    cnts = np.zeros_like(sd)
+    for II,(bd,bu) in enumerate(zip(bins[:-1],bins[1:])):
+        if(len(yvals[(xvals>bd)&(xvals<bu)])==0):
+            continue
+        cnts[II] = len(yvals[(xvals>bd)&(xvals<bu)])
+        if weights is not None:
+            cnts[II] = np.sum(weights[(xvals>bd)&(xvals<bu)])
+            try:
+                m[II]=stat(yvals[(xvals>bd)&(xvals<bu)],weights=weights[(xvals>bd)&(xvals<bu)])
+            except:
+                raise TypeError("Weights not possible for stat")
+        else:
+            cnts[II] = len(yvals[(xvals>bd)&(xvals<bu)])
+            m[II]=stat(yvals[(xvals>bd)&(xvals<bu)])
+    return bc, m, cnts
 
-def gen_binned_df(df, nbins=50):
+def gen_binned_df(df, pct=50., nbins=50, equal_counts=True):
     """
-    Returns initial df with new columns showing Median and S.D. g_amp of
-    the bin in which the source is found, as well as the G magnitude bin center. 
+    Returns initial df with new columns showing percentile pct g_amp
     
     """
     
@@ -91,12 +98,24 @@ def gen_binned_df(df, nbins=50):
     g_amp = np.array(df['g_amp'])
     
     # Find binned statistics
-    meds, med_sds, bin_centers, bin_edges = binned_stats(x=mag, values=g_amp, nbins=nbins)
+    bin_centers, pct_, _ = running_stat(g_mag, g_amp, nbins=nbins, 
+                                        stat=lambda x: np.nanpercentile(x, pct),
+                                        equal_counts=equal_counts)
     
     # Add statistic columns
-    df['binmed_g_amp'] = pd.cut(g_mag, bins=bin_edges, labels=meds, include_lowest=True)
-    df['binsd_g_amp'] = pd.cut(g_mag, bins=bin_edges, labels=meds, include_lowest=True)
-    df['bincent_mag'] = pd.cut(g_mag, bins=bin_edges, labels=meds, include_lowest=True)
+    df['binpct_g_amp'] = np.interp(df['phot_g_mean_mag'], bin_centers, pct_)
     
     return df
 
+def generate_gaia_training_set(l,b,sizel,sizeb,percentile,**wsdb_kwargs):
+    
+    df = grab_virac_gaia_with_stats(l, b, sizel, sizeb, **wsdb_kwargs)
+    
+    df = gen_binned_df(df, pct=percentile, nbins=len(df)//100, equal_counts=True)
+    
+    df = df[df['g_amp']<df['binpct_g_amp']].reset_index(drop=True)
+    
+    return df
+    
+    
+    
