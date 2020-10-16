@@ -4,7 +4,7 @@ from trainset.gaia_extraction import generate_gaia_training_set
 from trainset.variable_training_set import load_all_variable_stars
 from initial_classif import binary_classification
 
-sizel, sizeb = config['sizel'], config['sizeb']
+sizel, sizeb = np.float64(config['sizel']), np.float64(config['sizeb'])
 
 
 def train_classification_region(grid, sizel, sizeb, variable_stars, index):

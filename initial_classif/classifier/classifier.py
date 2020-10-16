@@ -2,14 +2,21 @@ import numpy as np
 import pandas as pd
 
 from sklearn.model_selection import cross_validate
-from sklearn.ensembles import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import KFold
+from sklearn.metrics import confusion_matrix, classification_report
+try:
+    from sklearn.metrics import ConfusionMatrixDisplay
+except:
+    pass
 
-def feat_clip(df_inp, data_cols, qmin=0.1, qmax=99.9):
+def feat_clip(df_inp, data_cols, label_cols, qmin=0.1, qmax=99.9):
     """
     clip outside of 1rst and 99th percentile
     
     """
-    df = df_inp[data_cols].copy()
+    df = df_inp[data_cols + label_cols].copy()
     df.replace([np.inf, -np.inf], np.nan, inplace=True)
     df.dropna(axis=0, how='any', inplace=True)
     df_run = df.copy()
@@ -25,25 +32,13 @@ def feat_clip(df_inp, data_cols, qmin=0.1, qmax=99.9):
     print("{} sources left".format(len(df)))
     return df
 
-
-def select_df(df, _class, inf=False):
-    df_use = df.copy()
-    if inf:
-        df_use.replace([np.inf, -np.inf], np.nan, inplace=True)
-        df_use.dropna(axis=0, how='any', inplace=True)
-
-    df_use['class'] = pd.Series(len(df_use)*['{}'.format(_class)])
-    print("{0} {1} train class".format(len(df_use), _class))
-
-    return df_use
-
 def classif_report(y_test, y_pred, estimator, plot_name):
     
-    cm = metric.confusion_matrix(y_test,y_pred)
-    cr = metric.classification_report(y_test,y_pred)
+    cm = confusion_matrix(y_test,y_pred)
+    cr = classification_report(y_test,y_pred)
     
     if plot_name:
-        cm = metric.confusion_matrix(y_test,y_pred,normalize=True)
+        cm = confusion_matrix(y_test,y_pred,normalize=True)
         displ = ConfusionMatrixDisplay(confusion_matrix=cm,
                                        display_labels=estimator.classes_)
         disp = displ.plot(include_values=True, cmap=plt.cm.Blues, 
@@ -94,7 +89,10 @@ class classification(object):
     
     def run(self, training_set, plot_name):
         
-        X_train, y_train = training_set[self.data_cols], training_set[self.target_cols]
+        print(training_set[[list(set(training_set.columns)-set(['class']))[0],
+                            'class']].groupby('class').agg('count'))
+        
+        X_train, y_train = training_set[self.data_cols], training_set[self.target_cols].values.ravel()
         sc = StandardScaler()
         X_train = sc.fit_transform(X_train)
         
@@ -103,15 +101,16 @@ class classification(object):
                                             max_depth=18, class_weight='balanced_subsample')
         
         split = KFold(n_splits=10, shuffle=True, random_state=42)
-        cv = cross_validate(self.model, X_train, y_train, cv=split, return_estimators=True)
+        cv = cross_validate(self.model, X_train, y_train, cv=split, return_estimator=True)
         
         ypred = np.zeros_like(y_train)
-        for i,train_index, test_index in enumerate(split(X_train, y_train)):
-            ypred[test_index] = cv['estimator'][i].pred(X_train[test_index])
+        split = KFold(n_splits=10, shuffle=True, random_state=42)
+        for i, (train_index, test_index) in enumerate(split.split(X_train, y_train)):
+            ypred[test_index] = cv['estimator'][i].predict(X_train[test_index])
 
-        self.cm, self.cr = classif_report(y, y_pred, cv['estimator'][0], plot_name)
+        self.cm, self.cr = classif_report(y_train, ypred, cv['estimator'][0], plot_name)
         
-        self.model.fit(X_train, y_train.values.ravel())
+        self.model.fit(X_train, y_train)
         self.feature_importance = [{c : self.model.feature_importances_[j]
                                     for j, c in enumerate(self.data_cols)}]
         if plot_name:
@@ -122,36 +121,31 @@ class classification(object):
 
 class variable_classification(classification):
     
-    def __init__(self, data, plot_name=None):
+    def __init__(self, training_set, plot_name=None):
         
         self.data_cols = XXX
         self.target_cols = ['class']
         
         ## Might be better to impute missing data?
-        train_const = select_df(data, 'CONST', inf=True).dropna()
-        train_all_var = select_df(data, 'VAR').dropna()
+        training_set = feat_clip(training_set, self.data_cols)
         
-        training_set = feat_clip(pd.concat([train_const, train_all_var], axis=0), self.data_cols)
-        
-        run(training_set)
+        elf.run(training_set, plot_name)
         
     
 class binary_classification(classification):
     
-    def __init__(self, data, plot_name=None):
+    def __init__(self, training_set, plot_name=None):
         
-        self.data_cols = ['skewness','kurtosis', 'stetson_i', 'eta',
-                          'mags_stdev', 'mags_mad',
-                          'mags_q100mq0', 'mags_q99mq1',
-                          'mags_q95mq5','mags_q90mq10', 'mags_q75mq25'] 
+#         self.data_cols = ['skewness','kurtosis', 'stetson_i', 'eta',
+#                           'mags_stdev', 'mags_mad',
+#                           'mags_q100mq0', 'mags_q99mq1',
+#                           'mags_q95mq5','mags_q90mq10', 'mags_q75mq25'] 
+        self.data_cols = ['ks_kurtosis']
         self.target_cols = ['class']
         
         ## Might be better to impute missing data?
-        train_const = select_df(data, 'CONST', inf=True).dropna()
-        train_all_var = select_df(data, 'VAR').dropna()
+        training_set = feat_clip(training_set, self.data_cols, self.target_cols)
         
-        training_set = feat_clip(pd.concat([train_const, train_all_var], axis=0), self.data_cols)
-        
-        run(training_set)
+        self.run(training_set, plot_name)
         
         

@@ -34,6 +34,7 @@ def classify_region(grid, variable_classifier, index):
     
     input_data = grab_virac_with_stats(grid['l'], grid['b'], sizel, sizeb)
     classes = binary_classifier.pred(input_data[binary_classifier.data_cols])
+    probability = binary_classifier.pred(input_data[binary_classifier.data_cols])
     
     variable_candidates = input_data[classes=='VAR'].reset_index(drop=True)
     
