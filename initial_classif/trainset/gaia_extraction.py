@@ -1,10 +1,11 @@
+from config import *
 import numpy as np
 import pandas as pd
 from scipy import stats
 
 from sqlutilpy import *
 
-from virac_classifier.wsdb_utils.wsdb_cred import wsdb_kwargs
+from wsdb_utils.wsdb_cred import wsdb_kwargs
 
 ### Code for the automatic extraction of constant stellar sources, based on population statistics of a predetermined variability measure in Gaia.
 ### WSDB Gaia DR2 (gaia_dr2.gaia_source) table specifications are used.
@@ -22,24 +23,16 @@ def grab_virac_gaia_with_stats(l,b,sizel,sizeb,**wsdb_kwargs):
     if (l + .5 * sizel > 360.):
         poly_string = "(t.l>%0.3f or t.l<%0.3f) and t.b>%0.3f and t.b<%0.3f"\
                         %(l-.5*sizel,l+.5*sizel-360.,b-.5*sizeb,b+.5*sizeb)
-    
+        
     data = pd.DataFrame(sqlutil.get("""
-            select t.*, 
+            select t.*, s.*,
             g.phot_g_mean_flux_over_error, g.phot_g_mean_mag, g.phot_g_n_obs
             from leigh_smith.virac2 as t
-            left join leigh_smith.virac2_x_gdr2 as x on t.sourceid=x.virac2_id
-            left join gaia_dr2.gaia_source as g on x.gdr2_id=g.source_id
-            where %s and duplicate=0 and astfit_params=5 and x.gdr2_id>0"""%poly_string, **wsdb_kwargs))
-    
-#     data = pd.DataFrame(sqlutil.get("""
-#             select t.*, s.*,
-#             g.phot_g_mean_flux_over_error, g.phot_g_mean_mag, g.phot_g_n_obs
-#             from leigh_smith.virac2 as t
-#             left join leigh_smith.virac2_x_gdr2 as x on t.sourceid=x.virac2_id
-#             left join leigh_smith.virac2_var_indices_tmp as s on t.sourceid=s.sourceid
-#             left join gaia_dr2.gaia_source as g on x.gdr2_id=g.source_id
-#             where %s and duplicate=0 and astfit_params=5"""%poly_string, **wsdb_kwargs))
-    
+            inner join leigh_smith.virac2_x_gdr2 as x on x.virac2_id=t.sourceid
+            inner join leigh_smith.virac2_var_indices_tmp as s on s.sourceid=t.sourceid
+            inner join gaia_dr2.gaia_source as g on g.source_id=x.gdr2_id
+            where %s and duplicate=0 and astfit_params=5"""%poly_string, 
+                                    password=config['password'],**wsdb_kwargs))
     return data
 
 def add_gvar_amp(df):
