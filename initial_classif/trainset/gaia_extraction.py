@@ -58,6 +58,7 @@ def add_gvar_amp(df):
     
     return df
 
+
 def running_stat(xvals,yvals,nbins=15,percentiles=[0.5,99.5],stat=np.nanstd, equal_counts=False, weights=None):
     '''
      Plots a running statistic between the 0.5th and 99.5th percentile -- bins equally spaced unless
@@ -67,13 +68,15 @@ def running_stat(xvals,yvals,nbins=15,percentiles=[0.5,99.5],stat=np.nanstd, equ
     bins = np.linspace(rangex[0],rangex[1],nbins)
     if equal_counts:
         bins = np.nanpercentile(xvals,np.linspace(percentiles[0],percentiles[1],nbins))
+        
     bc = .5*(bins[1:]+bins[:-1])
-    sd,m,su = np.nan*np.ones(np.shape(bc)), np.nan*np.ones(np.shape(bc)), np.nan*np.ones(np.shape(bc))
-    cnts = np.zeros_like(sd)
+    #sd,m,su = np.nan*np.ones(np.shape(bc)), np.nan*np.ones(np.shape(bc)), np.nan*np.ones(np.shape(bc))
+    m = np.nan*np.ones(np.shape(bc))
+    cnts = np.zeros_like(m)
+    
     for II,(bd,bu) in enumerate(zip(bins[:-1],bins[1:])):
         if(len(yvals[(xvals>bd)&(xvals<bu)])==0):
             continue
-        cnts[II] = len(yvals[(xvals>bd)&(xvals<bu)])
         if weights is not None:
             cnts[II] = np.sum(weights[(xvals>bd)&(xvals<bu)])
             try:
@@ -83,7 +86,9 @@ def running_stat(xvals,yvals,nbins=15,percentiles=[0.5,99.5],stat=np.nanstd, equ
         else:
             cnts[II] = len(yvals[(xvals>bd)&(xvals<bu)])
             m[II]=stat(yvals[(xvals>bd)&(xvals<bu)])
+            
     return bc, m, cnts
+
 
 def gen_binned_df(df, pct=50., nbins=50, equal_counts=True):
     """
@@ -98,21 +103,20 @@ def gen_binned_df(df, pct=50., nbins=50, equal_counts=True):
     g_amp = np.array(df['g_amp'])
     
     # Find binned statistics
-    bin_centers, pct_, _ = running_stat(g_mag, g_amp, nbins=nbins, 
+    bin_centers, pct_cut, cnts = running_stat(g_mag, g_amp, nbins=nbins, 
                                         stat=lambda x: np.nanpercentile(x, pct),
                                         equal_counts=equal_counts)
     
     # Add statistic columns
-    df['binpct_g_amp'] = np.interp(df['phot_g_mean_mag'], bin_centers, pct_)
+    df['binpct_g_amp'] = np.interp(df['phot_g_mean_mag'], bin_centers, pct_cut)
     
     return df
+
 
 def generate_gaia_training_set(l,b,sizel,sizeb,percentile,**wsdb_kwargs):
     
     df = grab_virac_gaia_with_stats(l, b, sizel, sizeb, **wsdb_kwargs)
-    
     df = gen_binned_df(df, pct=percentile, nbins=len(df)//100, equal_counts=True)
-    
     df = df[df['g_amp']<df['binpct_g_amp']].reset_index(drop=True)
     
     return df
