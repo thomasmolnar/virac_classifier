@@ -121,23 +121,6 @@ class classification(object):
     def __init__(self):
         pass
 
-class variable_classification(classification):
-    
-    def __init__(self, training_set, plot_name=None):
-        
-        self.data_cols = ["period"]
-
-#         self.data_cols = ["ks_stdev","ks_mad","ks_kurtosis","ks_skew","ks_eta",
-# #                            "ks_eta","ks_stetson_i","ks_stetson_j","ks_stetson_k",
-#                            "ks_p100_p0","ks_p99_p1","ks_p95_p5","ks_p84_p16","ks_p75_p25"]
-        
-        self.target_cols = ['class']
-        
-        ## Might be better to impute missing data?
-        training_set = feat_clip(training_set, self.data_cols)
-        
-        elf.run(training_set, plot_name)
-        
     
 class binary_classification(classification):
     
