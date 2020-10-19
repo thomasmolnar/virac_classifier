@@ -5,8 +5,6 @@ from scipy import stats
 
 from sqlutilpy import *
 
-from wsdb_utils.wsdb_cred import wsdb_kwargs
-
 def cm_virac(data, **wsdb_kwargs):
     """
     Crossmatch of VIRAC ids with the VIRAC2 tables
@@ -19,13 +17,20 @@ def cm_virac(data, **wsdb_kwargs):
     
     data = pd.DataFrame(sqlutil.local_join("""
                 select * from mytable as m
-                left join leigh_smith.virac2 as l on l.sourceid=m.sourceid""",
+                inner join leigh_smith.virac2 as l on l.sourceid=m.sourceid""",
                 'mytable',(data['virac2_id'],),('sourceid',),
                                            password=config['password'],**wsdb_kwargs))
     
     
     
     return data
+
+def pct_diff(dataV):
+    
+    for p in [[75,25],[84,16],[95,5],[99,1],[100,0]]:
+        dataV['ks_p%i_p%i' % (p[0], p[1])] = dataV['ks_p%i' % p[0]] - dataV['ks_p%i' % p[1]]
+        
+    return dataV
 
 def cm_virac_stats_table(data, **wsdb_kwargs):
     """
@@ -37,10 +42,12 @@ def cm_virac_stats_table(data, **wsdb_kwargs):
     
     """
     
-    data = pd.DataFrame(sqlutil.local_join("""
-                select * from mytable as m
-                left join leigh_smith.virac2_var_indices_tmp as l on l.sourceid=m.sourceid""",
+    dataV = pd.DataFrame(sqlutil.local_join("""
+                select l.* from mytable as m
+                inner join leigh_smith.virac2_var_indices_tmp as l on l.sourceid=m.sourceid""",
                 'mytable',(data['virac2_id'],),('sourceid',),
                                            password=config['password'],**wsdb_kwargs))
     
-    return data
+    dataV = pct_diff(dataV)
+    
+    return pd.merge(data, dataV, left_on='virac2_id', right_on='sourceid', how='right')

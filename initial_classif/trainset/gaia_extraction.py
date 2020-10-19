@@ -2,10 +2,8 @@ from config import *
 import numpy as np
 import pandas as pd
 from scipy import stats
-
 from sqlutilpy import *
-
-from wsdb_utils.wsdb_cred import wsdb_kwargs
+from interface_utils.add_stats import pct_diff
 
 ### Code for the automatic extraction of constant stellar sources, based on population statistics of a predetermined variability measure in Gaia.
 ### WSDB Gaia DR2 (gaia_dr2.gaia_source) table specifications are used.
@@ -25,14 +23,19 @@ def grab_virac_gaia_with_stats(l,b,sizel,sizeb,**wsdb_kwargs):
                         %(l-.5*sizel,l+.5*sizel-360.,b-.5*sizeb,b+.5*sizeb)
         
     data = pd.DataFrame(sqlutil.get("""
-            select t.*, s.*,
+            select t.*, s.*, x.sep_arcsec,
             g.phot_g_mean_flux_over_error, g.phot_g_mean_mag, g.phot_g_n_obs
             from leigh_smith.virac2 as t
-            inner join leigh_smith.virac2_x_gdr2 as x on x.virac2_id=t.sourceid
-            inner join leigh_smith.virac2_var_indices_tmp as s on s.sourceid=t.sourceid
-            inner join gaia_dr2.gaia_source as g on g.source_id=x.gdr2_id
-            where %s and duplicate=0 and astfit_params=5"""%poly_string, 
+            left join leigh_smith.virac2_x_gdr2 as x on x.virac2_id=t.sourceid
+            left join leigh_smith.virac2_var_indices_tmp as s on s.sourceid=t.sourceid
+            left join gaia_dr2.gaia_source as g on g.source_id=x.gdr2_id
+            where %s and duplicate=0 and astfit_params=5 and x.sep_arcsec<0.4"""%poly_string, 
                                     password=config['password'],**wsdb_kwargs))
+    
+    data = pct_diff(data)
+    
+    data = data.sort_values(by='sep_arcsec').drop_duplicates(subset=['sourceid']).reset_index(drop=True)
+    
     return data
 
 def add_gvar_amp(df):

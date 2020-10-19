@@ -13,15 +13,15 @@ def train_classification_region(grid, sizel, sizeb, variable_stars, index):
     gaia = generate_gaia_training_set(l, b, sizel * 60., sizeb * 60.)
     gaia['class']='CONST'
     
-    full_data = pd.concat([variable_stars, gaia], axis=0)
+    full_data = pd.concat([variable_stars, gaia], axis=0, sort=False)
     
-    classfier = binary_classification(full_data)
+    classifier = binary_classification(full_data)
     
     with open(config['binary_output_dir'] + 'binary_%i%s.pkl'%(index,''+'_test'*config['test']), 'wb') as f:
         pickle.dump(classifier.model, f)
 
         
-def run_loop(data, lstart, lend, bstart, bend):
+def run_loop(data, lstart, lend, bstart, bend, variable_stars):
     
     l_arr, b_arr = np.linspace(-10.,10.1,sizel), np.linspace(-10.,5.1,sizeb)
     l_arr, b_arr = .5*(l_arr[1:]+l_arr[:-1]), .5*(b_arr[1:]+b_arr[:-1])
@@ -46,6 +46,6 @@ if __name__=="__main__":
     variable_star['class']='VAR'
     
     if config['test']:
-        run_loop(-10,-10,-8.9,-8.9)
+        run_loop(-10,-10,-8.9,-8.9, variable_stars)
     else:
-        run_loop(-10,-10,10.1,10.1)
+        run_loop(-10,-10,10.1,10.1, variable_stars)

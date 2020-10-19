@@ -18,15 +18,13 @@ def feat_clip(df_inp, data_cols, label_cols, qmin=0.1, qmax=99.9):
     """
     df = df_inp[data_cols + label_cols].copy()
     df.replace([np.inf, -np.inf], np.nan, inplace=True)
-    df.dropna(axis=0, how='any', inplace=True)
-    df_run = df.copy()
+    
+    fltr = [True]*len(df)
     for i in data_cols:
-        values = np.array(df['{}'.format(i)])
-        bot = np.percentile(values, qmin)
-        top = np.percentile(values, qmax)
-        
-        df = df.drop(df[np.array(df['{}'.format(i)])<bot].index)
-        df = df.drop(df[np.array(df['{}'.format(i)])>top].index)
+        bot = np.nanpercentile(df[i], qmin)
+        top = np.nanpercentile(df[i], qmax)
+        fltr &= (df[i]>bot)&(df[i]<top)
+    df = df[fltr].reset_index(drop=True)
     
     print("{} sources removed from clip.".format(len(df_inp)-len(df)))
     print("{} sources left".format(len(df)))
@@ -123,7 +121,12 @@ class variable_classification(classification):
     
     def __init__(self, training_set, plot_name=None):
         
-        self.data_cols = XXX
+        self.data_cols = ["period"]
+
+#         self.data_cols = ["ks_stdev","ks_mad","ks_kurtosis","ks_skew","ks_eta",
+# #                            "ks_eta","ks_stetson_i","ks_stetson_j","ks_stetson_k",
+#                            "ks_p100_p0","ks_p99_p1","ks_p95_p5","ks_p84_p16","ks_p75_p25"]
+        
         self.target_cols = ['class']
         
         ## Might be better to impute missing data?
@@ -136,11 +139,10 @@ class binary_classification(classification):
     
     def __init__(self, training_set, plot_name=None):
         
-#         self.data_cols = ['skewness','kurtosis', 'stetson_i', 'eta',
-#                           'mags_stdev', 'mags_mad',
-#                           'mags_q100mq0', 'mags_q99mq1',
-#                           'mags_q95mq5','mags_q90mq10', 'mags_q75mq25'] 
-        self.data_cols = ['ks_kurtosis']
+        self.data_cols = ["ks_stdev","ks_mad","ks_kurtosis","ks_skew",
+#                            "ks_eta","ks_stetson_i","ks_stetson_j","ks_stetson_k",
+                           "ks_p100_p0","ks_p99_p1","ks_p95_p5","ks_p84_p16","ks_p75_p25"]
+        
         self.target_cols = ['class']
         
         ## Might be better to impute missing data?
