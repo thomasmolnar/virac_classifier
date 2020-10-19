@@ -90,7 +90,7 @@ class classification(object):
         print(training_set[[list(set(training_set.columns)-set(['class']))[0],
                             'class']].groupby('class').agg('count'))
         
-        X_train, y_train = training_set[self.data_cols], training_set[self.target_cols].values.ravel()
+        X_train, self.y_train = training_set[self.data_cols], training_set[self.target_cols].values.ravel()
         sc = StandardScaler()
         X_train = sc.fit_transform(X_train)
         
@@ -99,16 +99,16 @@ class classification(object):
                                             max_depth=18, class_weight='balanced_subsample')
         
         split = KFold(n_splits=10, shuffle=True, random_state=42)
-        cv = cross_validate(self.model, X_train, y_train, cv=split, return_estimator=True)
+        cv = cross_validate(self.model, X_train, self.y_train, cv=split, return_estimator=True)
         
-        ypred = np.zeros_like(y_train)
+        self.ypred = np.zeros_like(self.y_train)
         split = KFold(n_splits=10, shuffle=True, random_state=42)
-        for i, (train_index, test_index) in enumerate(split.split(X_train, y_train)):
-            ypred[test_index] = cv['estimator'][i].predict(X_train[test_index])
-
-        self.cm, self.cr = classif_report(y_train, ypred, cv['estimator'][0], plot_name)
+        for i, (train_index, test_index) in enumerate(split.split(X_train, self.y_train)):
+            self.ypred[test_index] = cv['estimator'][i].predict(X_train[test_index])
+            
+        self.cm, self.cr = classif_report(self.y_train, self.ypred, cv['estimator'][0], plot_name)
         
-        self.model.fit(X_train, y_train)
+        self.model.fit(X_train, self.y_train)
         self.feature_importance = [{c : self.model.feature_importances_[j]
                                     for j, c in enumerate(self.data_cols)}]
         if plot_name:

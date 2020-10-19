@@ -24,5 +24,5 @@ if __name__=="__main__":
     variable_stars = get_periodic_features(variable_stars)
     classfier = variable_classification(variable_stars)
     
-    with open(config['variable_output_dir'] + 'variable%s.pkl'%(index,''+'_test'*config['test']), 'wb') as f:
+    with open(config['variable_output_dir'] + 'variable%s.pkl'%(index,''+'_test'*bool(config['test'])), 'wb') as f:
         pickle.dump(classifier.model, f)

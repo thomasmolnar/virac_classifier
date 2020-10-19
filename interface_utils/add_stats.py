@@ -1,4 +1,3 @@
-from config import *
 import numpy as np
 import pandas as pd
 from scipy import stats
@@ -18,8 +17,7 @@ def cm_virac(data, **wsdb_kwargs):
     data = pd.DataFrame(sqlutil.local_join("""
                 select * from mytable as m
                 inner join leigh_smith.virac2 as l on l.sourceid=m.sourceid""",
-                'mytable',(data['virac2_id'],),('sourceid',),
-                                           password=config['password'],**wsdb_kwargs))
+                'mytable',(data['virac2_id'],),('sourceid',),**wsdb_kwargs))
     
     
     
@@ -45,8 +43,7 @@ def cm_virac_stats_table(data, **wsdb_kwargs):
     dataV = pd.DataFrame(sqlutil.local_join("""
                 select l.* from mytable as m
                 inner join leigh_smith.virac2_var_indices_tmp as l on l.sourceid=m.sourceid""",
-                'mytable',(data['virac2_id'],),('sourceid',),
-                                           password=config['password'],**wsdb_kwargs))
+                'mytable',(data['virac2_id'],),('sourceid',),**wsdb_kwargs))
     
     dataV = pct_diff(dataV)
     

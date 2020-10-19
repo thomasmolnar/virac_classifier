@@ -24,5 +24,7 @@ Here the main loop will be over the fields of step 1. We load all sources from W
 
 We have two options for the exact order of operations in the third step. Either we save the list of candidate sourceid and then run the period finding on the Hertfordshire cluster returning the periodic data. And then run the classifier locally. Or the whole of the second step is run on the Herts cluster.
 
+### config.cfg
 
+The configure file contains the configuration parameters for running the three steps. The 'general' section contains paths to where the input data is stored ('variable_dir' is the directory for the input variable dataset) and results are outputted. In particular, 'binary_output_dir' gives the path to the pickled binary classifiers, 'variable_output_dir' same for the second variable step and 'results_dir' the sets of classified variable stars. Setting 'test' to True runs the limited test regions. 'sizel', 'sizeb' governs the size in degrees of the fields to divide the survey into. The 'wsdb' section gives the hostname and username needed for fetching results from WSDB. The password does not need to be entered here but is instead requested when running the code.
 

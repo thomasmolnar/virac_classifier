@@ -1,4 +1,3 @@
-from config import *
 import numpy as np
 import pandas as pd
 from scipy import stats
@@ -7,7 +6,7 @@ from sqlutilpy import *
 from interface_utils.add_stats import cm_virac_stats_table
 
 
-def load_all_variable_stars(**wsdb_kwargs):
+def load_all_variable_stars(config, **wsdb_kwargs):
     
     with open(config['variable_dir']+'var_trainset_virac2.pkl', 'rb') as f:
         dsets = pickle.load(f)

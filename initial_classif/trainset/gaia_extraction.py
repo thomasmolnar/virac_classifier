@@ -1,4 +1,3 @@
-from config import *
 import numpy as np
 import pandas as pd
 from scipy import stats
@@ -30,7 +29,7 @@ def grab_virac_gaia_with_stats(l,b,sizel,sizeb,**wsdb_kwargs):
             left join leigh_smith.virac2_var_indices_tmp as s on s.sourceid=t.sourceid
             left join gaia_dr2.gaia_source as g on g.source_id=x.gdr2_id
             where %s and duplicate=0 and astfit_params=5 and x.sep_arcsec<0.4"""%poly_string, 
-                                    password=config['password'],**wsdb_kwargs))
+                                    **wsdb_kwargs))
     
     data = pct_diff(data)
     
