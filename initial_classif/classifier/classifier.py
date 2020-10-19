@@ -11,13 +11,18 @@ try:
 except:
     pass
 
-def feat_clip(df_inp, data_cols, label_cols, qmin=0.1, qmax=99.9):
+def feat_clip(df_inp, data_cols, target_cols, impute=False, qmin=0.5, qmax=99.5):
     """
-    clip outside of 1rst and 99th percentile
+    Outlier clip outside of 0.5th and 99.5th percentile
     
     """
-    df = df_inp[data_cols + label_cols].copy()
+    df = df_inp[data_cols + target_cols].copy()
     df.replace([np.inf, -np.inf], np.nan, inplace=True)
+    
+    if impute:
+        for i data_cols:
+            col_mean = df[i].mean()
+            df[i].fillna(col, inplace=True)
     
     fltr = [True]*len(df)
     for i in data_cols:
@@ -26,8 +31,7 @@ def feat_clip(df_inp, data_cols, label_cols, qmin=0.1, qmax=99.9):
         fltr &= (df[i]>bot)&(df[i]<top)
     df = df[fltr].reset_index(drop=True)
     
-    print("{} sources removed from clip.".format(len(df_inp)-len(df)))
-    print("{} sources left".format(len(df)))
+    print("{}% sources removed from clip.".format(round(len(df_inp)-len(df), 4)*100)
     return df
 
 def classif_report(y_test, y_pred, estimator, plot_name):
@@ -145,8 +149,9 @@ class binary_classification(classification):
         
         self.target_cols = ['class']
         
-        ## Might be better to impute missing data?
-        training_set = feat_clip(training_set, self.data_cols, self.target_cols)
+        ## Added mean imputation - may need to be rethink for sources
+        ## with very limited data entries
+        training_set = feat_clip(training_set, self.data_cols, self.target_cols, impute=False)
         
         self.run(training_set, plot_name)
         

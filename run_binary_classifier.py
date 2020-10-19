@@ -1,15 +1,16 @@
 from config import *
 from functools import partial
-from trainset.gaia_extraction import generate_gaia_training_set
-from trainset.variable_training_set import load_all_variable_stars
-from initial_classif import binary_classification
+from intial_classif.trainset.gaia_extraction import generate_gaia_training_set
+from intial_classif.trainset.variable_training_set import load_all_variable_stars
+from initial_classif.classifier.classifer import binary_classification
 
 sizel, sizeb = np.float64(config['sizel']), np.float64(config['sizeb'])
 
-
 def train_classification_region(grid, sizel, sizeb, variable_stars, index):
     
-    l,b = grid[i]
+    #take tile specs from grid
+    l,b = grid[index]
+    
     gaia = generate_gaia_training_set(l, b, sizel * 60., sizeb * 60.)
     gaia['class']='CONST'
     
@@ -23,13 +24,17 @@ def train_classification_region(grid, sizel, sizeb, variable_stars, index):
         
 def run_loop(data, lstart, lend, bstart, bend, variable_stars):
     
-    l_arr, b_arr = np.linspace(-10.,10.1,sizel), np.linspace(-10.,5.1,sizeb)
+    #number of tiles along l,b ranges
+    ntile_l = int(np.ceil(abs(lend-lstart)/sizel))
+    ntile_b = int(np.ceil(abs(lend-lstart)/sizel))
+    
+    l_arr, b_arr = np.linspace(lstart,lend,ntile_l), np.linspace(bstart,bend,ntile_b)
     l_arr, b_arr = .5*(l_arr[1:]+l_arr[:-1]), .5*(b_arr[1:]+b_arr[:-1])
     
     L,B = np.meshgrid(l_arr, b_arr)
     grid = np.vstack([L.flatten(), B.flatten()]).T
     
-    pd.DataFrame({'index':np.arange(len(grid)), 'l':L.flatten(),B.flatten()}).to_pickle(
+    pd.DataFrame({'index':np.arange(len(grid)), 'l':L.flatten(),'b':B.flatten()}).to_pickle(
         config['binary_output_dir'] + 'grid%s.pkl'%(''+'_test'*config['test'])
     )
     
