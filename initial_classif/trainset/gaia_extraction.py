@@ -110,12 +110,23 @@ def gen_binned_df(df, pct=50., nbins=50, equal_counts=True):
     return df
 
 
-def generate_gaia_training_set(l,b,sizel,sizeb,percentile,config):
+def downsample_training_set(data, number):
+    weight_b, bins = np.histogram(data['ks_ivw_mean_mag'], 
+                                 range=np.nanpercentile(data['ks_ivw_mean_mag'],1.,99.))
+    bc = .5*(bins[1:]+bins[:-1])
+    weights = np.interp(data['ks_ivw_mean_mag'], bc, weights/np.sum(weights))
+    return data[np.random.choice(np.arange(len(data)), number, replace=False, p=weights)].reset_index(drop=True)
+
+
+def generate_gaia_training_set(l,b,sizel,sizeb,percentile,size,config):
     
     df = grab_virac_gaia_with_stats(l, b, sizel, sizeb, config)
     df = gen_binned_df(df, pct=percentile, nbins=len(df)//100, equal_counts=True)
     df = df[df['g_amp']<df['binpct_g_amp']].reset_index(drop=True)
     
+    if size<len(df):
+        df = downsample_training_set(df, size)
+
     return df
     
     

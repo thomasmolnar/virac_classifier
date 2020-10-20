@@ -15,6 +15,7 @@ def train_classification_region(grid, sizel, sizeb, variable_stars, config, inde
     print('Generating Gaia training set for (%s, %s)'%(l,b))
     gaia = generate_gaia_training_set(l, b, sizel * 60., sizeb * 60., 
                                       np.float64(config['gaia_percentile']),
+                                      len(variable_stars),
                                       **config.wsdb_kwargs)
     gaia['class']='CONST'
     
