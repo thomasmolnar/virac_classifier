@@ -4,7 +4,7 @@ from run_variable_classifier import output_dir as variable_output_dir
 from wsdb_utils.wsdb_cred import wsdb_kwargs
 
 
-def grab_virac_with_stats(l,b,sizel,sizeb):
+def grab_virac_with_stats(l,b,sizel,sizeb,config):
     
     sizel /= 60.
     sizeb /= 60.
@@ -22,8 +22,10 @@ def grab_virac_with_stats(l,b,sizel,sizeb):
             select t.*, s.*
             from leigh_smith.virac2 as t
             inner join leigh_smith.virac2_var_indices_tmp as s on s.sourceid=t.sourceid
-            where %s and duplicate=0 and astfit_params=5"""%poly_string, 
-                                    password=config['password'],**wsdb_kwargs))
+            where %s and duplicate=0 and astfit_params=5
+            and ks_n_detections>%i and ks_ivw_mean_mag>%0.4f and ks_ivw_mean_mag<%0.4f"""%(
+		poly_string,config['n_detection_threshold'],config['lower_k'],config['upper_k']), 
+                                    **config.wsdb_kwargs))
     return data
 
 

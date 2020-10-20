@@ -113,8 +113,8 @@ class classification(object):
         self.cm, self.cr = classif_report(self.y_train, self.ypred, cv['estimator'][0], plot_name)
         
         self.model.fit(X_train, self.y_train)
-        self.feature_importance = [{c : self.model.feature_importances_[j]
-                                    for j, c in enumerate(self.data_cols)}]
+        self.feature_importance = {c : self.model.feature_importances_[j]
+                                    for j, c in enumerate(self.data_cols)}
         if plot_name:
             plot_imp(self.feature_importance, plot_name)
     

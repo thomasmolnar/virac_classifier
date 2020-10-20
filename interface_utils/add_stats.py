@@ -4,7 +4,7 @@ from scipy import stats
 
 from sqlutilpy import *
 
-def cm_virac(data, **wsdb_kwargs):
+def cm_virac(data, config):
     """
     Crossmatch of VIRAC ids with the VIRAC2 tables
     ---
@@ -17,9 +17,7 @@ def cm_virac(data, **wsdb_kwargs):
     data = pd.DataFrame(sqlutil.local_join("""
                 select * from mytable as m
                 inner join leigh_smith.virac2 as l on l.sourceid=m.sourceid""",
-                'mytable',(data['virac2_id'],),('sourceid',),**wsdb_kwargs))
-    
-    
+                'mytable',(data['virac2_id'],),('sourceid',),**config.wsdb_kwargs))
     
     return data
 
@@ -30,9 +28,9 @@ def pct_diff(dataV):
         
     return dataV
 
-def cm_virac_stats_table(data, **wsdb_kwargs):
+def cm_virac_stats_table(data, config):
     """
-    Crossmatch of VIRAC ids with the variability indices
+    Crossmatch of VIRAC ids with the variability indices (and VIRAC2 table)
     ---
     input: data = (sourceid)
     
@@ -41,9 +39,10 @@ def cm_virac_stats_table(data, **wsdb_kwargs):
     """
     
     dataV = pd.DataFrame(sqlutil.local_join("""
-                select l.* from mytable as m
+                select t.*, l.* from mytable as m
+                inner join leigh_smith.virac2 as t on t.sourceid=m.sourceid
                 inner join leigh_smith.virac2_var_indices_tmp as l on l.sourceid=m.sourceid""",
-                'mytable',(data['virac2_id'],),('sourceid',),**wsdb_kwargs))
+                'mytable',(data['virac2_id'],),('sourceid',),**config.wsdb_kwargs))
     
     dataV = pct_diff(dataV)
     
