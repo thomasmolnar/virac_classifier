@@ -20,7 +20,7 @@ def feat_clip(df_inp, data_cols, target_cols, impute=False, qmin=0.5, qmax=99.5)
     df.replace([np.inf, -np.inf], np.nan, inplace=True)
     
     if impute:
-        for i data_cols:
+        for i in data_cols:
             col_mean = df[i].mean()
             df[i].fillna(col, inplace=True)
     
@@ -31,7 +31,7 @@ def feat_clip(df_inp, data_cols, target_cols, impute=False, qmin=0.5, qmax=99.5)
         fltr &= (df[i]>bot)&(df[i]<top)
     df = df[fltr].reset_index(drop=True)
     
-    print("{}% sources removed from clip.".format(round(len(df_inp)-len(df), 4)*100)
+    print("{}% sources removed from clip.".format(round(len(df_inp)-len(df), 4)*100))
     return df
 
 def classif_report(y_test, y_pred, estimator, plot_name):
