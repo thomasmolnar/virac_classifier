@@ -18,11 +18,15 @@ def get_periodic_features(data):
 
 if __name__=="__main__":
     
-    request_password()
+    config = configuration()
+    config.request_password()
     
-    variable_stars = load_all_variable_stars()
-    variable_stars = get_periodic_features(variable_stars)
-    classfier = variable_classification(variable_stars)
+    variable_stars = load_all_variable_stars(config)
+    constant_data = load_constant_data(len(variable_stars), config)
+    constant_data['class']='CONST'
+    trainset = pd.concat([variable_stars, constant_data], axis=0).reset_index(drop=True)
+    variable_stars = get_periodic_features(trainset)
+    classifier = variable_classification(trainset)
     
     with open(config['variable_output_dir'] + 'variable%s.pkl'%(index,''+'_test'*bool(config['test'])), 'wb') as f:
-        pickle.dump(classifier.model, f)
+        pickle.dump(classifier, f)

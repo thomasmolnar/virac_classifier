@@ -29,16 +29,16 @@ def grab_virac_with_stats(l,b,sizel,sizeb,config):
     return data
 
 
-def classify_region(grid, variable_classifier, index):
+def classify_region(grid, variable_classifier, config, index):
     
-    with open(config['binary_output_dir'] + 'binary_%i%s.pkl'%(index,''+'_test'*test), 'rb') as f:
+    with open(config['binary_output_dir'] + 'binary_%i%s.pkl'%(index,''+'_test'*bool(config['test'])), 'rb') as f:
         binary_classifier = pickle.load(f)
     
-    input_data = grab_virac_with_stats(grid['l'], grid['b'], sizel, sizeb)
+    input_data = grab_virac_with_stats(grid['l'], grid['b'], grid['sizel'], grid['sizeb'], config)
     classes = binary_classifier.pred(input_data[binary_classifier.data_cols])
     probability = binary_classifier.pred(input_data[binary_classifier.data_cols])
     
-    variable_candidates = input_data[classes=='VAR'].reset_index(drop=True)
+    variable_candidates = input_data[(classes=='VAR')&(probability>config['prob_thresh'])].reset_index(drop=True)
     
     variable_candidates = add_periodic_features(variable_candidates)
     
@@ -50,13 +50,16 @@ def classify_region(grid, variable_classifier, index):
     
 if __name__=="__main__":
     
+    config = configuration()
+    config.request_password()
+    
     grid = pd.read_pickle('grid%s.pkl'%(''+'_test'*test))
     
-    with open(variable_output_dir + 'variable%s.pkl'%(index,''+'_test'*test), 'rb') as f:
+    with open(variable_output_dir + 'variable%s.pkl'%(index,''+'_test'*bool(config['test'])), 'rb') as f:
         variable_classifier = pickle.load(f)
     
     p = Pool(32)
-    p.map(partial(classify_region, grid, variable_classifier),
+    p.map(partial(classify_region, grid, variable_classifier, config),
           np.arange(len(grid)))
     p.close()
     p.join()

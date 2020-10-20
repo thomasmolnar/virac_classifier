@@ -34,7 +34,7 @@ def feat_clip(df_inp, data_cols, target_cols, impute=False, qmin=0.5, qmax=99.5)
     print("{}% sources removed from clip.".format(round(len(df_inp)-len(df), 4)*100))
     return df
 
-def classif_report(y_test, y_pred, estimator, plot_name):
+def classif_report(y_test, y_pred, classes, plot_name):
     
     cm = confusion_matrix(y_test,y_pred)
     cr = classification_report(y_test,y_pred)
@@ -42,7 +42,7 @@ def classif_report(y_test, y_pred, estimator, plot_name):
     if plot_name:
         cm = confusion_matrix(y_test,y_pred,normalize=True)
         displ = ConfusionMatrixDisplay(confusion_matrix=cm,
-                                       display_labels=estimator.classes_)
+                                       display_labels=classes)
         disp = displ.plot(include_values=True, cmap=plt.cm.Blues, 
                           ax=None, xticks_rotation='horizontal',
                           values_format=None)
@@ -110,7 +110,7 @@ class classification(object):
         for i, (train_index, test_index) in enumerate(split.split(X_train, self.y_train)):
             self.ypred[test_index] = cv['estimator'][i].predict(X_train[test_index])
             
-        self.cm, self.cr = classif_report(self.y_train, self.ypred, cv['estimator'][0], plot_name)
+        self.cm, self.cr = classif_report(self.y_train, self.ypred, cv['estimator'][0].classes_, plot_name)
         
         self.model.fit(X_train, self.y_train)
         self.feature_importance = {c : self.model.feature_importances_[j]

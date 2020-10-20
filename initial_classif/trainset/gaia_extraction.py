@@ -7,7 +7,28 @@ from interface_utils.add_stats import pct_diff
 ### Code for the automatic extraction of constant stellar sources, based on population statistics of a predetermined variability measure in Gaia.
 ### WSDB Gaia DR2 (gaia_dr2.gaia_source) table specifications are used.
 
-def grab_virac_gaia_with_stats(l,b,sizel,sizeb,config):
+def grab_virac_gaia_random_sample(random_index_max,config):
+    
+    data = pd.DataFrame(sqlutil.get("""
+            select t.*, s.*, x.sep_arcsec,
+            g.phot_g_mean_flux_over_error, g.phot_g_mean_mag, g.phot_g_n_obs
+            from leigh_smith.virac2 as t
+            left join leigh_smith.virac2_x_gdr2 as x on x.virac2_id=t.sourceid
+            left join leigh_smith.virac2_var_indices_tmp as s on s.sourceid=t.sourceid
+            left join gaia_dr2.gaia_source as g on g.source_id=x.gdr2_id
+            where random_index<%i and duplicate=0 and astfit_params=5 and x.sep_arcsec<0.4 
+            and ks_n_detections>%i and ks_ivw_mean_mag>%0.4f and ks_ivw_mean_mag<%0.4f"""%(
+		random_index_max, config['n_detection_threshold'],config['lower_k'],config['upper_k']), 
+                                    config.wsdb_kwargs))
+    
+    data = pct_diff(data)
+    
+    data = data.sort_values(by='sep_arcsec').drop_duplicates(subset=['sourceid']).reset_index(drop=True)
+    
+    return data
+
+
+def grab_virac_gaia_region_with_stats(l,b,sizel,sizeb,config):
     
     sizel /= 60.
     sizeb /= 60.
@@ -120,7 +141,7 @@ def downsample_training_set(data, number):
 
 def generate_gaia_training_set(l,b,sizel,sizeb,percentile,size,config):
     
-    df = grab_virac_gaia_with_stats(l, b, sizel, sizeb, config)
+    df = grab_virac_gaia_region_with_stats(l, b, sizel, sizeb, config)
     df = gen_binned_df(df, pct=percentile, nbins=len(df)//100, equal_counts=True)
     df = df[df['g_amp']<df['binpct_g_amp']].reset_index(drop=True)
     
@@ -131,3 +152,14 @@ def generate_gaia_training_set(l,b,sizel,sizeb,percentile,size,config):
     
     
     
+def generate_gaia_training_set_random(size, config):    
+
+    random_index = 15000000
+    df = grab_virac_gaia_random_sample(random_index, config)
+    df = gen_binned_df(df, pct=percentile, nbins=len(df)//100, equal_counts=True)
+    df = df[df['g_amp']<df['binpct_g_amp']].reset_index(drop=True)
+    
+    if size<len(df):
+        df = downsample_training_set(df, size)
+
+    return df

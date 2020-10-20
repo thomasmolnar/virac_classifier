@@ -9,9 +9,9 @@ from initial_classif.trainset.variable_training_sets import load_all_variable_st
 from initial_classif.classifier.classifier import binary_classification
 
 
-def train_classification_region(grid, sizel, sizeb, variable_stars, config, index):
+def train_classification_region(grid, variable_stars, config, index):
     
-    l,b = grid[index]
+    l,b,sizel,sizeb = grid[index]
     print('Generating Gaia training set for (%s, %s)'%(l,b))
     gaia = generate_gaia_training_set(l, b, sizel * 60., sizeb * 60., 
                                       np.float64(config['gaia_percentile']),
@@ -36,14 +36,16 @@ def run_loop(lstart, lend, bstart, bend, variable_stars, config):
     l_arr, b_arr = .5*(l_arr[1:]+l_arr[:-1]), .5*(b_arr[1:]+b_arr[:-1])
     
     L,B = np.meshgrid(l_arr, b_arr)
-    grid = np.vstack([L.flatten(), B.flatten()]).T
+    grid = np.vstack([L.flatten(), B.flatten(), 
+                      np.ones_like(B.flatten())*sizel, 
+                      np.ones_like(B.flatten())*sizeb]).T
     
     pd.DataFrame({'index':np.arange(len(grid)), 'l':L.flatten(),'b':B.flatten()}).to_pickle(
         config['binary_output_dir'] + 'grid%s.pkl'%(''+'_test'*bool(config['test']))
     )
     
     p = Pool(32)
-    p.map(partial(train_classification_region, grid, sizel, sizeb, variable_stars, config),
+    p.map(partial(train_classification_region, grid, variable_stars, config),
           np.arange(len(grid)))
     p.close()
     p.join()
