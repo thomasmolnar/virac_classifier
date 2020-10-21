@@ -106,8 +106,11 @@ class lightcurve_loader(object):
                 if len(required_index)>1000:
                     data = [np.concatenate(f["timeSeries"][col][:][required_index]) for col in cols]
                 else:
-                    data = [np.concatenate(f["timeSeries"][col][required_index]) for col in cols]
-                    
+                    data = [np.concatenate(f["timeSeries"][col][:][required_index]) for col in cols]
+                # Insert sourceids and ra,dec
+                cols.insert(0, "sourceid")
+                data.insert(0, np.repeat(sources[sorter], counts))
+                
                 cols.insert(0, "sourceid")
                 data.insert(0, np.repeat(sources[sorter], counts))
                 
@@ -124,7 +127,19 @@ class lightcurve_loader(object):
                 df = Table(data, names=cols)
                 df = df[df['filter']=='Ks']
                 del df['filter']
-                return df
+                
+                ## Correction from  MJD to HJD needed here
+#                 coordinate = SkyCoord(ra=data['ra'] * u.deg,
+#                           dec=data['dec'] * u.deg,
+#                           frame='icrs')
+#                 times = time.Time(data['mjdobs'][0],
+#                       format='mjd',
+#                       scale='utc',
+#                       location=paranal)
+#                 data['HJD'] = data['mjdobs'] + 2400000.5 + times.light_travel_time(
+#                     coordinate).to(u.day).value
+    
+                 return df
         
         # Loop through files
         df = vstack([get_data_per_file(hpx,ns,sources) for hpx, ns, sources 
@@ -133,7 +148,32 @@ class lightcurve_loader(object):
             df.rename_columns(["hfad_mag", "hfad_emag"],["mag","error"])
         
         return df
+
+def split_lcs(data):
+    """
+    Split Astropy Table of lightcurves into list of pandas for each light curve
+    (ordered sourceid column not needed)
     
+    """
+    
+    ll = lightcurve_loader()
+    lc = ll(data['sourceid'].values)
+    
+    #group obs based on sourceid
+    lc_by_id = lc.group_by('sourceid')
+    
+    #split Table
+    lc_df = []
+    for key, group in zip(lc_by_id.groups.keys, lc_by_id.groups):
+        #additional check on number of epochs 
+        count = len(group)
+        group_df = pd.DataFrame(group.as_array())
+        if count>=20:
+            lc_df.append(group_df)
+        else:
+            pass
+            
+    return lc_df    
     
 def run_tests():
     test_mag = np.array([13.291, 13.272, 13.254, 13.266, 13.252, 13.263, 12.878, 13.238,
@@ -215,6 +255,7 @@ def run_tests():
         s=f['sourceList']['sourceid'][:][np.sort(np.random.randint(0,55000,24000))]
     rslt=ll(s)
     print((time.time()-tt)*1000., 'ms')
+    return rslt
     
 if __name__=="__main__":
     run_tests()

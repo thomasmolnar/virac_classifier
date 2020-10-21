@@ -1,13 +1,25 @@
 from config import *
-from interface_utils.light_curve_loader import lightcurve_loader
-from trainset.variable_training_set import load_all_variable_stars
+from interface_utils.light_curve_loader import split_lcs
+from initial_classif.trainset.variable_training_set import load_all_variable_stars
+from fine_classif.feat_extract.extract_feats import extract_per_feats
 from initial_classif import variable_classification
 
 def get_periodic_features(data):
     
-    ll = lightcurve_loader()
+    # Load variable ligth curves in pd format
+    lc = split_lcs(data)
+
+    sourceids = [df['sourceid'][0] for df in lc]
+    if len(sourceids) != len(set(sourceids)):
+        assert ValueError("Duplicates found in sourceid list")
+    else:
     
-    lc = ll(data['sourceid'].values)
+    #LombScargle frequency grid conditions 
+    ls_kwargs = {'maximum_frequency': config['ls_max_freq'],
+                 'minimum_frequency':1./max(data['varcat_period'].values)}
+    
+    #Extract features
+    features = extract_per_feats(lc, ls_kwargs, config)
     
     ### Now find the periodic features from light curves
     ### Will need to reorder output

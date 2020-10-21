@@ -903,16 +903,13 @@ def plot_lightcurve_stack(data, to_year=False):
         if d is not None
     ]
 
-def find_lag(times, period, ecl=False):
+def find_lag(times, period):
     """
     Find probabilistic metrics to determine if the time between observations of phase folded light curves constitute 'lagging'
     """
     
     # Find time diffs of ordered phase folded light curve
-    if ecl:
-        times_fld = times%(2.*period)
-    else:
-        times_fld = times%(period)
+    times_fld = times%(period)
     times_fld_ord = np.sort(times_fld)
     times_fld_diff = np.diff(times_fld_ord)
     
@@ -945,7 +942,7 @@ def power_stats(power):
     
     return {'pow_mean_disp':mean_disp, 'pow_med_disp':med_disp}
 
-def lombscargle(data, ecl=False, **ls_kwargs):
+def lombscargle(data, **ls_kwargs):
     """
     LombScargle analysis of lightcurve to extract certain summary statistics
     """
@@ -970,7 +967,7 @@ def lombscargle(data, ecl=False, **ls_kwargs):
     period = periods[max_pow_arg]
     
     # Find metric showing time lag
-    time_lag = find_lag(data[fld], period, ecl=ecl)
+    time_lag = find_lag(data[fld], period)
     
     # Find power array stats
     pow_stats = power_stats(power)
