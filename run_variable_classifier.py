@@ -4,15 +4,10 @@ from initial_classif.trainset.variable_training_set import load_all_variable_sta
 from fine_classif.feat_extract.extract_feats import extract_per_feats
 from initial_classif import variable_classification
 
-def get_periodic_features(data):
+def get_periodic_features(data, config):
     
     # Load variable ligth curves in pd format
     lc = split_lcs(data)
-
-    sourceids = [df['sourceid'][0] for df in lc]
-    if len(sourceids) != len(set(sourceids)):
-        assert ValueError("Duplicates found in sourceid list")
-    else:
     
     #LombScargle frequency grid conditions 
     ls_kwargs = {'maximum_frequency': config['ls_max_freq'],
@@ -37,7 +32,7 @@ if __name__=="__main__":
     constant_data = load_constant_data(len(variable_stars), config)
     constant_data['class']='CONST'
     trainset = pd.concat([variable_stars, constant_data], axis=0).reset_index(drop=True)
-    variable_stars = get_periodic_features(trainset)
+    variable_stars = get_periodic_features(trainset, config)
     classifier = variable_classification(trainset)
     
     with open(config['variable_output_dir'] + 'variable%s.pkl'%(index,''+'_test'*bool(config['test'])), 'wb') as f:

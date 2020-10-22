@@ -58,7 +58,7 @@ def time_span(data):
     return span
 
 
-def periodic_feats(data, nterms=4, npoly=1, full=False):
+def periodic_feats(data, nterms=4, npoly=1):
     """
     Returns periodic features (fourier components) of photometric lightcurves
     
@@ -90,9 +90,6 @@ def periodic_feats(data, nterms=4, npoly=1, full=False):
                                          keep_small=True, 
                                          code_switch=True,
                                          use_power_of_2=True)
-
-    if full:
-        return results
     
     # Calculate delta log likelihood between periodic and constant Gaussian scatter models
     pred_mean = lc_utils.retrieve_fourier_poly(times=times, results=results)
@@ -108,7 +105,7 @@ def periodic_feats(data, nterms=4, npoly=1, full=False):
             'phi_3':phases[3], 'delta_loglik':delta_loglik}
 
 
-def periodic_feats_force(data, period, nterms=4, npoly=1, full=False):
+def periodic_feats_force(data, period, nterms=4, npoly=1):
     """
     Returns periodic features (fourier components) of photometric lightcurves
     
@@ -134,9 +131,6 @@ def periodic_feats_force(data, period, nterms=4, npoly=1, full=False):
                                          code_switch=True,
                                          use_power_of_2=True)
     
-    if full:
-        return results
-    
     # Calculate delta log likelihood between periodic and constant Gaussian scatter models
     pred_mean = lc_utils.retrieve_fourier_poly(times=times, results=results)
     delta_loglik = lc_utils.get_delta_log_likelihood(mags, err, pred_mean=pred_mean)
@@ -151,7 +145,22 @@ def periodic_feats_force(data, period, nterms=4, npoly=1, full=False):
             'phi_3':phases[3], 'delta_loglik':delta_loglik}
 
 
-def source_feat_extract(lightcurve, ls_kwargs={}, config):
+def correct_to_HJD(data, ra, dec):
+    """
+    Convert from MJD to HJD based on skycoords
+    
+    """
+    coordinate = SkyCoord(ra * u.deg,
+                          dec * u.deg,
+                          frame='icrs')
+    times = time.Time(data['mjdobs'],
+                      format='mjd',
+                      scale='utc',
+                      location=paranal)
+    data['HJD'] = data['mjdobs'] + 2400000.5 + times.light_travel_time(
+        coordinate).to(u.day).value
+
+def source_feat_extract(data, ls_kwargs={}, config):
     """
     Wrapper to extract all features for a given
     source light curve (panda format).
@@ -161,6 +170,10 @@ def source_feat_extract(lightcurve, ls_kwargs={}, config):
     returns: dict of features
     
     """
+    ra, dec, lc = data[0],data[1],data[2]
+    
+    # Correct MJD to HJD
+    correct_to_HJD(lc, ra, dec)
     
     # Need to inlcude quality cuts for amb_match, ast_res_chisq, chi
     # Pre-process light curve data with quality cut and 3 sigma conservative cut 

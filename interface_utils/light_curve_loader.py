@@ -111,9 +111,6 @@ class lightcurve_loader(object):
                 cols.insert(0, "sourceid")
                 data.insert(0, np.repeat(sources[sorter], counts))
                 
-                cols.insert(0, "sourceid")
-                data.insert(0, np.repeat(sources[sorter], counts))
-                
                 # Now fill in the mjdobs and filter entries
                 sorter = np.argsort(ci['catindexid'])
                 indices = sorter[np.searchsorted(ci['catindexid'], data[1], sorter=sorter)]
@@ -128,18 +125,7 @@ class lightcurve_loader(object):
                 df = df[df['filter']=='Ks']
                 del df['filter']
                 
-                ## Correction from  MJD to HJD needed here
-#                 coordinate = SkyCoord(ra=data['ra'] * u.deg,
-#                           dec=data['dec'] * u.deg,
-#                           frame='icrs')
-#                 times = time.Time(data['mjdobs'][0],
-#                       format='mjd',
-#                       scale='utc',
-#                       location=paranal)
-#                 data['HJD'] = data['mjdobs'] + 2400000.5 + times.light_travel_time(
-#                     coordinate).to(u.day).value
-    
-                 return df
+                return df        
         
         # Loop through files
         df = vstack([get_data_per_file(hpx,ns,sources) for hpx, ns, sources 
@@ -149,31 +135,44 @@ class lightcurve_loader(object):
         
         return df
 
+
 def split_lcs(data):
     """
     Split Astropy Table of lightcurves into list of pandas for each light curve
     (ordered sourceid column not needed)
     
+    Output in form [ra, dec, lc] - ra/dec needed to corred MJD to HJD
+    (easiest to include now)
     """
+    inp_sourceids = data['sourceid'].values
     
     ll = lightcurve_loader()
-    lc = ll(data['sourceid'].values)
+    lc = ll(inp_sourceids)
     
     #group obs based on sourceid
     lc_by_id = lc.group_by('sourceid')
     
-    #split Table
-    lc_df = []
-    for key, group in zip(lc_by_id.groups.keys, lc_by_id.groups):
-        #additional check on number of epochs 
-        count = len(group)
-        group_df = pd.DataFrame(group.as_array())
-        if count>=20:
-            lc_df.append(group_df)
-        else:
-            pass
-            
-    return lc_df    
+    #split Table 
+    lc_df = [pd.DataFrame(group.as_array()) for group in lc_by_id.groups]
+
+    out_sourceids = [df['sourceid'][0] for df in lc_df]
+    if len(out_sourceids) != len(set(out_sourceids)):
+        assert ValueError("Duplicates found in sourceid list")
+    
+    #Find indices to sort loaded output ids/input ids
+    ind_out = list(np.argsort(out_sourceids))
+    ind_inp = list(np.argsort(inp_sourceids))
+    
+    #Import sorted equatorial positions (check column names)
+    source_ra, source_dec = data['ra'].values[ind_inp], data['dec'].values[ind_inp]
+    
+    #Sort lc dataframe
+    sorted_lc = [lc_df[i] for i in ind_out]
+
+    lc_pos =[[ra, dec, _lc] for ra, dec, _lc in zip(source_ra, source_dec, sorted_lc)]
+    
+    return lc_pos  
+    
     
 def run_tests():
     test_mag = np.array([13.291, 13.272, 13.254, 13.266, 13.252, 13.263, 12.878, 13.238,
