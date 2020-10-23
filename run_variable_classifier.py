@@ -14,11 +14,11 @@ def get_periodic_features(data, config):
                  'minimum_frequency':1./(1.5*max(data['varcat_period'].values))}
     
     #Extract features
-    features = extract_per_feats(lc, ls_kwargs, config)
+    features = extract_per_feats(lc, data, ls_kwargs, config)
     
     ### Now find the periodic features from light curves
     ### Will need to reorder output
-    ### Add a serial/parallel version -- can run parallel for full variable set and serial for each tile
+    ### Add a serial/parallel version -- can run parallelfor full variable set and serial for each tile
     
     return features
     

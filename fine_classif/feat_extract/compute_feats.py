@@ -233,6 +233,3 @@ def source_feat_extract(data, ls_kwargs={}, config):
     features = {'sourceid':sourceid, **per_feats, **per_dict, **nonper_feats}
     
     return features
-
-
-
