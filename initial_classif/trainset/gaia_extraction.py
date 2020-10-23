@@ -14,12 +14,13 @@ def grab_virac_gaia_random_sample(random_index_max,config):
             g.phot_g_mean_flux_over_error, g.phot_g_mean_mag, g.phot_g_n_obs
             from leigh_smith.virac2 as t
             left join leigh_smith.virac2_x_gdr2 as x on x.virac2_id=t.sourceid
-            left join leigh_smith.virac2_var_indices_tmp as s on s.sourceid=t.sourceid
+            left join leigh_smith.virac2_var_indices as s on s.sourceid=t.sourceid
             left join gaia_dr2.gaia_source as g on g.source_id=x.gdr2_id
             where random_index<%i and duplicate=0 and astfit_params=5 and x.sep_arcsec<0.4 
             and ks_n_detections>%i and ks_ivw_mean_mag>%0.4f and ks_ivw_mean_mag<%0.4f"""%(
-		random_index_max, config['n_detection_threshold'],config['lower_k'],config['upper_k']), 
-                                    config.wsdb_kwargs))
+		random_index_max, np.int64(config['n_detection_threshold']),
+        np.float64(config['lower_k']),np.float64(config['upper_k'])), 
+                                    **config.wsdb_kwargs))
     
     data = pct_diff(data)
     
@@ -47,12 +48,13 @@ def grab_virac_gaia_region_with_stats(l,b,sizel,sizeb,config):
             g.phot_g_mean_flux_over_error, g.phot_g_mean_mag, g.phot_g_n_obs
             from leigh_smith.virac2 as t
             left join leigh_smith.virac2_x_gdr2 as x on x.virac2_id=t.sourceid
-            left join leigh_smith.virac2_var_indices_tmp as s on s.sourceid=t.sourceid
+            left join leigh_smith.virac2_var_indices as s on s.sourceid=t.sourceid
             left join gaia_dr2.gaia_source as g on g.source_id=x.gdr2_id
             where %s and duplicate=0 and astfit_params=5 and x.sep_arcsec<0.4 
             and ks_n_detections>%i and ks_ivw_mean_mag>%0.4f and ks_ivw_mean_mag<%0.4f"""%(
-		poly_string,config['n_detection_threshold'],config['lower_k'],config['upper_k']), 
-                                    config.wsdb_kwargs))
+		poly_string,np.int64(config['n_detection_threshold']),
+        np.float64(config['lower_k']),np.float64(config['upper_k'])), 
+                                    **config.wsdb_kwargs))
     
     data = pct_diff(data)
     
@@ -132,11 +134,11 @@ def gen_binned_df(df, pct=50., nbins=50, equal_counts=True):
 
 
 def downsample_training_set(data, number):
-    weight_b, bins = np.histogram(data['ks_ivw_mean_mag'], 
-                                 range=np.nanpercentile(data['ks_ivw_mean_mag'],1.,99.))
+    weight_b, bins = np.histogram(data['ks_ivw_mean_mag'].values, 
+                                 range=np.nanpercentile(data['ks_ivw_mean_mag'].values,[1.,99.]))
     bc = .5*(bins[1:]+bins[:-1])
-    weights = np.interp(data['ks_ivw_mean_mag'], bc, weights/np.sum(weights))
-    return data[np.random.choice(np.arange(len(data)), number, replace=False, p=weights)].reset_index(drop=True)
+    weights = np.interp(data['ks_ivw_mean_mag'].values, bc, weight_b)
+    return data.iloc[np.random.choice(np.arange(len(data)), number, replace=False, p=weights/np.sum(weights))].reset_index(drop=True)
 
 
 def generate_gaia_training_set(l,b,sizel,sizeb,percentile,size,config):

@@ -17,7 +17,7 @@ def cm_virac(data, config):
     data = pd.DataFrame(sqlutil.local_join("""
                 select * from mytable as m
                 inner join leigh_smith.virac2 as l on l.sourceid=m.sourceid""",
-                'mytable',(data['virac2_id'],),('sourceid',),**config.wsdb_kwargs))
+                'mytable',(data['virac2_id'].values,),('sourceid',),**config.wsdb_kwargs))
     
     return data
 
@@ -41,8 +41,8 @@ def cm_virac_stats_table(data, config):
     dataV = pd.DataFrame(sqlutil.local_join("""
                 select t.*, l.* from mytable as m
                 inner join leigh_smith.virac2 as t on t.sourceid=m.sourceid
-                inner join leigh_smith.virac2_var_indices_tmp as l on l.sourceid=m.sourceid""",
-                'mytable',(data['virac2_id'],),('sourceid',),**config.wsdb_kwargs))
+                inner join leigh_smith.virac2_var_indices as l on l.sourceid=m.sourceid""",
+                'mytable',(data['virac2_id'].values,),('sourceid',),**config.wsdb_kwargs))
     
     dataV = pct_diff(dataV)
     

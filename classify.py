@@ -21,7 +21,7 @@ def grab_virac_with_stats(l,b,sizel,sizeb,config):
     data = pd.DataFrame(sqlutil.get("""
             select t.*, s.*
             from leigh_smith.virac2 as t
-            inner join leigh_smith.virac2_var_indices_tmp as s on s.sourceid=t.sourceid
+            inner join leigh_smith.virac2_var_indices as s on s.sourceid=t.sourceid
             where %s and duplicate=0 and astfit_params=5
             and ks_n_detections>%i and ks_ivw_mean_mag>%0.4f and ks_ivw_mean_mag<%0.4f"""%(
 		poly_string,config['n_detection_threshold'],config['lower_k'],config['upper_k']), 

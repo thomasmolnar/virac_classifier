@@ -16,13 +16,13 @@ def train_classification_region(grid, variable_stars, config, index):
     gaia = generate_gaia_training_set(l, b, sizel * 60., sizeb * 60., 
                                       np.float64(config['gaia_percentile']),
                                       len(variable_stars),
-                                      **config.wsdb_kwargs)
+                                      config)
     gaia['class']='CONST'
     
     full_data = pd.concat([variable_stars, gaia], axis=0, sort=False)
     
     print('Running classifier for (%s, %s): %i stars'%(l,b,len(full_data)))
-    classifier = binary_classification(full_data[:20])
+    classifier = binary_classification(full_data)
     
     with open(config['binary_output_dir'] + 'binary_%i%s.pkl'%(index,''+'_test'*bool(config['test'])), 'wb') as f:
         pickle.dump(classifier, f)
@@ -57,13 +57,13 @@ if __name__=="__main__":
     config.request_password()
     
     print('Loading variable stars...') 
-    variable_stars = load_all_variable_stars(config, **config.wsdb_kwargs)
+    variable_stars = load_all_variable_stars(config, test=bool(config['test']))
     variable_stars['class']='VAR'
     
     if bool(config['test']):
         config['sizel']=0.09
         config['sizeb']=0.09
-        l, b = 1.275,-0.385
+        l, b = 0.787411, -0.054603
         run_loop(l - .5 * np.float64(config['sizel']), 
                  l + 1.01 * .5 * np.float64(config['sizel']), 
                  b - .5 * np.float64(config['sizeb']),

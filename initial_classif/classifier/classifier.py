@@ -21,8 +21,8 @@ def feat_clip(df_inp, data_cols, target_cols, impute=False, qmin=0.5, qmax=99.5)
     
     if impute:
         for i in data_cols:
-            col_mean = df[i].mean()
-            df[i].fillna(col, inplace=True)
+            col_mean = np.nanmean(df[i].values)
+            df[i].fillna(col_mean, inplace=True)
     
     fltr = [True]*len(df)
     for i in data_cols:
@@ -31,7 +31,7 @@ def feat_clip(df_inp, data_cols, target_cols, impute=False, qmin=0.5, qmax=99.5)
         fltr &= (df[i]>bot)&(df[i]<top)
     df = df[fltr].reset_index(drop=True)
     
-    print("{}% sources removed from clip.".format(round(len(df_inp)-len(df), 4)*100))
+    print("{}% sources removed from clip.".format(round(len(df_inp)/len(df)-1, 4)*100))
     return df
 
 def classif_report(y_test, y_pred, classes, plot_name):
@@ -127,14 +127,15 @@ class binary_classification(classification):
     def __init__(self, training_set, plot_name=None):
         
         self.data_cols = ["ks_stdev","ks_mad","ks_kurtosis","ks_skew",
-#                            "ks_eta","ks_stetson_i","ks_stetson_j","ks_stetson_k",
+                           "ks_eta",#"ks_eta_e",
+                           "ks_stetson_i","ks_stetson_j","ks_stetson_k",
                            "ks_p100_p0","ks_p99_p1","ks_p95_p5","ks_p84_p16","ks_p75_p25"]
         
         self.target_cols = ['class']
         
         ## Added mean imputation - may need to be rethink for sources
         ## with very limited data entries
-        training_set = feat_clip(training_set, self.data_cols, self.target_cols, impute=False)
+        training_set = feat_clip(training_set, self.data_cols, self.target_cols, impute=True)
         
         self.run(training_set, plot_name)
         
