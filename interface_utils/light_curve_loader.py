@@ -106,8 +106,8 @@ class lightcurve_loader(object):
                 if len(required_index)>1000:
                     data = [np.concatenate(f["timeSeries"][col][:][required_index]) for col in cols]
                 else:
-                    data = [np.concatenate(f["timeSeries"][col][required_index]) for col in cols]
-                    
+                    data = [np.concatenate(f["timeSeries"][col][:][required_index]) for col in cols]
+                # Insert sourceids and ra,dec
                 cols.insert(0, "sourceid")
                 data.insert(0, np.repeat(sources[sorter], counts))
                 
@@ -124,7 +124,8 @@ class lightcurve_loader(object):
                 df = Table(data, names=cols)
                 df = df[df['filter']=='Ks']
                 del df['filter']
-                return df
+                
+                return df        
         
         # Loop through files
         df = vstack([get_data_per_file(hpx,ns,sources) for hpx, ns, sources 
@@ -133,6 +134,44 @@ class lightcurve_loader(object):
             df.rename_columns(["hfad_mag", "hfad_emag"],["mag","error"])
         
         return df
+
+
+def split_lcs(data):
+    """
+    Split Astropy Table of lightcurves into list of pandas for each light curve
+    (ordered sourceid column not needed)
+    
+    Output in form [ra, dec, lc] - ra/dec needed to corred MJD to HJD
+    (easiest to include now)
+    """
+    inp_sourceids = data['sourceid'].values
+    
+    ll = lightcurve_loader()
+    lc = ll(inp_sourceids)
+    
+    #group obs based on sourceid
+    lc_by_id = lc.group_by('sourceid')
+    
+    #split Table 
+    lc_df = [pd.DataFrame(group.as_array()) for group in lc_by_id.groups]
+
+    out_sourceids = [df['sourceid'][0] for df in lc_df]
+    if len(out_sourceids) != len(set(out_sourceids)):
+        assert ValueError("Duplicates found in sourceid list")
+    
+    #Find indices to sort loaded output ids/input ids
+    ind_out = list(np.argsort(out_sourceids))
+    ind_inp = list(np.argsort(inp_sourceids))
+    
+    #Import sorted equatorial positions (check column names)
+    source_ra, source_dec = data['ra'].values[ind_inp], data['dec'].values[ind_inp]
+    
+    #Sort lc dataframe
+    sorted_lc = [lc_df[i] for i in ind_out]
+
+    lc_pos =[[ra, dec, _lc] for ra, dec, _lc in zip(source_ra, source_dec, sorted_lc)]
+    
+    return lc_pos
     
     
 def run_tests():
@@ -215,6 +254,7 @@ def run_tests():
         s=f['sourceList']['sourceid'][:][np.sort(np.random.randint(0,55000,24000))]
     rslt=ll(s)
     print((time.time()-tt)*1000., 'ms')
+    return rslt
     
 if __name__=="__main__":
     run_tests()
