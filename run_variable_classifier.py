@@ -9,9 +9,9 @@ def get_periodic_features(data, config):
     # Load variable ligth curves in pd format
     lc = split_lcs(data)
     
-    #LombScargle frequency grid conditions 
+    #general LombScargle frequency grid conditions 
     ls_kwargs = {'maximum_frequency': config['ls_max_freq'],
-                 'minimum_frequency':1./max(data['varcat_period'].values)}
+                 'minimum_frequency':1./(1.5*max(data['varcat_period'].values))}
     
     #Extract features
     features = extract_per_feats(lc, ls_kwargs, config)

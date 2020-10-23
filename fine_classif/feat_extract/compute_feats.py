@@ -1,39 +1,32 @@
 from scipy import stats
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import math
-import astropy
-import random
 
-from astropy.timeseries import BoxLeastSquares
-from astropy.timeseries import LombScargle
+from astropy import time, coordinates as coord, units as u
+from astropy.coordinates import SkyCoord
 
 from multiprocessing import Pool
 from functools import partial
 
-from fine_classif.lc_utils import lombscargle
-from fine_classif.virac_lc import *
-import extinction_map
-
+import lc_utils
 
 def magarr_stats(data):
     """
     Returns simple dict of population statistics of timeseries photometric data
     
     """
-    data_use = data.copy()
-    mags = data_use.mag.values
+    mags = data.mag.values
     
-    # Get common statistics with describe() functionality
+    # Get common statistics
     nobs, minmax, mean, var, skew, kurt = stats.describe(mags)
     sd = np.sqrt(var)
     amp = (minmax[1]-minmax[0])/2.
     
     # Comp range statisitics
-    data_use.drop(data_use[data_use.mag.values > float(mean+sd)].index, inplace=True)
-    data_use.drop(data_use[data_use.mag.values < float(mean-sd)].index, inplace=True)
-    within = len(data_use.mag.values)
+    beyond = data[(mags < float(mean+sd))].reset_index(drop=True)
+    beyond = beyond[(beyond.mag.values > float(mean-sd))].reset_index(drop=True)
+    within = len(beyond)
     beyondfrac = (len(mags)-within)/len(mags)
     median = np.median(mags)
     magdev = mags - median
@@ -45,13 +38,11 @@ def magarr_stats(data):
     return out
 
 
-def time_span(data):
+def time_span(times):
     """
     Returns the time span of observational epochs
     
     """
-    data_use = data.copy()
-    times = data_use.HJD.values
     max_t, min_t = np.max(times), np.min(times)
     span = max_t - min_t
     
@@ -68,7 +59,7 @@ def periodic_feats(data, nterms=4, npoly=1):
     err = data.error.values
     
     #dt = 0.1/t_range from classification paper
-    span = round(time_span(data))
+    span = round(time_span(times))
     sep = 0.1/span
     rang = math.ceil((20.-(1/span))/sep)
     
@@ -108,22 +99,24 @@ def periodic_feats(data, nterms=4, npoly=1):
 def periodic_feats_force(data, period, nterms=4, npoly=1):
     """
     Returns periodic features (fourier components) of photometric lightcurves
+    with forced frequency input grid (determined from LombScargle)
     
     """
     times = data.HJD.values
     mags = data.mag.values
     err = data.error.values
     
-    # Force frequency grid to include LombScargle analysis period and integer multiples 
-    f0 = 1./(period*3)
-    f1 = 1./(period*0.25)
+    # Forced frequency grid 
+    f0 = 1./(2*period)
+    f1 = 1./(period)
+    Nf = 2
         
     results = lc_utils.fourier_poly_chi2_fit_full(times=times,
                                          mag=mags,
                                          err=err,
                                          f0=f0,
                                          f1=f1,
-                                         Nf=5,
+                                         Nf=Nf,
                                          nterms=nterms,
                                          npoly=npoly,
                                          regularization=0.1,
@@ -153,13 +146,49 @@ def correct_to_HJD(data, ra, dec):
     coordinate = SkyCoord(ra * u.deg,
                           dec * u.deg,
                           frame='icrs')
-    times = time.Time(data['mjdobs'],
+    
+    times = time.Time(data['mjdobs'][0],
                       format='mjd',
                       scale='utc',
                       location=paranal)
+    
     data['HJD'] = data['mjdobs'] + 2400000.5 + times.light_travel_time(
         coordinate).to(u.day).value
 
+def quality_cut(data, chicut=5., ast_cut=11.829, amb_corr=True):
+    """
+    Photometry/Astrometric quality cuts
+    
+    chi < 5. -- require high quality detection
+    ast_res_chisq < 11.829 -- residual to ast fit (approx. < 3sigma)
+    ambiguous_match = False -- require detection is unambiguously associated with this source
+    
+    """
+    maglimit = 13.2 ## BASED ON EXPERIMENTS WITH MATSUNAGA
+    
+    data = data[~((data['chi'] > dpchicut) &
+                (data['mag'] < maglimit))].reset_index(drop=True)
+    data = data[~(data['ast_res_chisq']>ast_cut)].reset_index(drop=True)
+    
+    if amb_corr:
+        data = data[~(data['ambiguous_match'])].reset_index(drop=True)
+    
+    return data
+
+def sigclipper(data, sig_thresh=4.):
+    """
+    Clip light curve based on sigma distance from mean 
+    
+    """
+    if len(data) <= 1:
+        return data
+    
+    stdd = .5 * np.diff(np.nanpercentile(data['mag'].values, [16, 84]))
+    midd = np.nanmedian(data['mag'].values)
+    
+    return data[np.abs(data['mag'].values - midd) / stdd < sig_thresh].reset_index(
+        drop=True)
+    
 def source_feat_extract(data, ls_kwargs={}, config):
     """
     Wrapper to extract all features for a given
@@ -169,25 +198,39 @@ def source_feat_extract(data, ls_kwargs={}, config):
     
     returns: dict of features
     
+    columns of light curves:
+    ['sourceid' 'mjdobs' 'mag' 'error' 'ambiguous_match' 'ast_res_chisq' 'chi']
     """
+    # Get Source info
     ra, dec, lc = data[0],data[1],data[2]
+    sourceid = lc['sourceid'].values[0]
     
     # Correct MJD to HJD
     correct_to_HJD(lc, ra, dec)
     
     # Need to inlcude quality cuts for amb_match, ast_res_chisq, chi
     # Pre-process light curve data with quality cut and 3 sigma conservative cut 
-    lc = sigclipper(quality_cut_phot(lightcurve, config['amb_correction']),
-                             thresh=3.)
+    lc_clean = sigclipper(quality_cut_phot(lc, config['chi_cut'],config['ast_cut'],
+                                           config['amb_correction']), config['sig_thresh'])
     
-    # Extract non-periodic and extra statistics 
-    nonper_feats = magarr_stats(lc)
+    # Length check post quality cuts
+    if len(lc_clean)<=1:
+        return {'sourceid':sourceid, 'small':True}
+    
+    # Extract non-periodic statistics 
+    nonper_feats = magarr_stats(lc_clean)
     
     # Exract light-curve summary periodic statistics from Fourier analysis
-    per_dict = lc_utils.lombscargle(lc, **ls_kwargs)
-    per_feats = periodic_feats_force(lc, period=per_dict['ls_period'], nterms=4, npoly=1)
+    per_dict = lc_utils.lombscargle_stats(lc_clean, **ls_kwargs)
     
-    features = {**per_feats, **per_dict, **nonper_feats}
+    if config['force_method']:
+        per_feats = periodic_feats_force(lc_clean, period=per_dict['ls_period'],
+                                     nterms=config['nterms'], npoly=config['npoly'])
+    else:
+        per_feats = periodic_feats(lc_clean, period=per_dict['ls_period'],
+                                     nterms=config['nterms'], npoly=config['npoly'])
+    
+    features = {'sourceid':sourceid, **per_feats, **per_dict, **nonper_feats}
     
     return features
 

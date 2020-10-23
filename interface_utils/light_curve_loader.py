@@ -171,7 +171,7 @@ def split_lcs(data):
 
     lc_pos =[[ra, dec, _lc] for ra, dec, _lc in zip(source_ra, source_dec, sorted_lc)]
     
-    return lc_pos  
+    return lc_pos
     
     
 def run_tests():
