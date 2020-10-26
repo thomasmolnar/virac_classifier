@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 
-from compute_feats import comp_lc_feats
+# from compute_feats import comp_lc_feats
 
 def calc_excess_colour(glon, glat, jk=False, hk=False):
     """

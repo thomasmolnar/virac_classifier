@@ -135,43 +135,41 @@ class lightcurve_loader(object):
         
         return df
 
+    def split_lcs(self,data):
+        """
+        Split Astropy Table of lightcurves into list of pandas for each light curve
+        (ordered sourceid column not needed)
 
-def split_lcs(data):
-    """
-    Split Astropy Table of lightcurves into list of pandas for each light curve
-    (ordered sourceid column not needed)
-    
-    Output in form [ra, dec, lc] - ra/dec needed to corred MJD to HJD
-    (easiest to include now)
-    """
-    inp_sourceids = data['sourceid'].values
-    
-    ll = lightcurve_loader()
-    lc = ll(inp_sourceids)
-    
-    #group obs based on sourceid
-    lc_by_id = lc.group_by('sourceid')
-    
-    #split Table 
-    lc_df = [pd.DataFrame(group.as_array()) for group in lc_by_id.groups]
+        Output in form [ra, dec, lc] - ra/dec needed to corred MJD to HJD
+        (easiest to include now)
+        """
+        inp_sourceids = data['sourceid'].values
 
-    out_sourceids = [df['sourceid'][0] for df in lc_df]
-    if len(out_sourceids) != len(set(out_sourceids)):
-        assert ValueError("Duplicates found in sourceid list")
-    
-    #Find indices to sort loaded output ids/input ids
-    ind_out = list(np.argsort(out_sourceids))
-    ind_inp = list(np.argsort(inp_sourceids))
-    
-    #Import sorted equatorial positions (check column names)
-    source_ra, source_dec = data['ra'].values[ind_inp], data['dec'].values[ind_inp]
-    
-    #Sort lc dataframe
-    sorted_lc = [lc_df[i] for i in ind_out]
+        lc = self.__call__(inp_sourceids)
 
-    lc_pos =[[ra, dec, _lc] for ra, dec, _lc in zip(source_ra, source_dec, sorted_lc)]
-    
-    return lc_pos
+        #group obs based on sourceid
+        lc_by_id = lc.group_by('sourceid')
+
+        #split Table 
+        lc_df = [pd.DataFrame(group.as_array()) for group in lc_by_id.groups]
+
+        out_sourceids = [df['sourceid'][0] for df in lc_df]
+        if len(out_sourceids) != len(set(out_sourceids)):
+            assert ValueError("Duplicates found in sourceid list")
+
+        #Find indices to sort loaded output ids/input ids
+        ind_out = list(np.argsort(out_sourceids))
+        ind_inp = list(np.argsort(inp_sourceids))
+
+        #Import sorted equatorial positions (check column names)
+        source_ra, source_dec = data['ra'].values[ind_inp], data['dec'].values[ind_inp]
+
+        #Sort lc dataframe
+        sorted_lc = [lc_df[i] for i in ind_out]
+
+        lc_pos =[[ra, dec, _lc] for ra, dec, _lc in zip(source_ra, source_dec, sorted_lc)]
+
+        return lc_pos
     
     
 def run_tests():

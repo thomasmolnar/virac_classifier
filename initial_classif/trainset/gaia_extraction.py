@@ -154,9 +154,8 @@ def generate_gaia_training_set(l,b,sizel,sizeb,percentile,size,config):
     
     
     
-def generate_gaia_training_set_random(size, config):    
-
-    random_index = 15000000
+def generate_gaia_training_set_random(size, config, percentile, random_index = 600000):    
+    
     df = grab_virac_gaia_random_sample(random_index, config)
     df = gen_binned_df(df, pct=percentile, nbins=len(df)//100, equal_counts=True)
     df = df[df['g_amp']<df['binpct_g_amp']].reset_index(drop=True)

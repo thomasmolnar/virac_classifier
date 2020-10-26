@@ -2,6 +2,7 @@ from config import *
 from run_binary_classifier import sizel, sizeb, output_dir as binary_output_dir
 from run_variable_classifier import output_dir as variable_output_dir
 from wsdb_utils.wsdb_cred import wsdb_kwargs
+from interface_utils.light_curve_loader import lightcurve_loader
 
 
 def grab_virac_with_stats(l,b,sizel,sizeb,config):
@@ -29,7 +30,7 @@ def grab_virac_with_stats(l,b,sizel,sizeb,config):
     return data
 
 
-def classify_region(grid, variable_classifier, config, index):
+def classify_region(grid, variable_classifier, lightcurve_loader, config, index):
     
     with open(config['binary_output_dir'] + 'binary_%i%s.pkl'%(index,''+'_test'*bool(config['test'])), 'rb') as f:
         binary_classifier = pickle.load(f)
@@ -40,7 +41,7 @@ def classify_region(grid, variable_classifier, config, index):
     
     variable_candidates = input_data[(classes=='VAR')&(probability>config['prob_thresh'])].reset_index(drop=True)
     
-    variable_candidates = add_periodic_features(variable_candidates)
+    variable_candidates = add_periodic_features(variable_candidates, lightcurve_loader)
     
     variable_classes = variable_classifier.pred(variable_candidates[variable_classifier.data_cols])
     
@@ -58,8 +59,10 @@ if __name__=="__main__":
     with open(variable_output_dir + 'variable%s.pkl'%(index,''+'_test'*bool(config['test'])), 'rb') as f:
         variable_classifier = pickle.load(f)
     
+    lightcurve_loader = light_curve_loader.lightcurve_loader()
+    
     p = Pool(32)
-    p.map(partial(classify_region, grid, variable_classifier, config),
+    p.map(partial(classify_region, grid, variable_classifier, lightcurve_loader, config),
           np.arange(len(grid)))
     p.close()
     p.join()
