@@ -33,9 +33,13 @@ def add_colour_info(df, config):
     
     glon = df.l.values
     glat = df.b.values
-    jmag = df.j_ivw_mean_mag .values
-    hmag = df.h_ivw_mean_mag.values
-    kmag = df.ks_ivw_mean_mag.values
+    ## Need to check columns names for filter phots
+#     jmag = df.j_ivw_mean_mag .values
+#     hmag = df.h_ivw_mean_mag.values
+#     kmag = df.ks_ivw_mean_mag.values
+    jmag = df.j_a_ivw_mean_mag .values
+    hmag = df.h_a_ivw_mean_mag.values
+    kmag = df.ks_a_ivw_mean_mag.values
         
     jk_col_excess = calc_excess_colour(glon, glat, config, jk=True)
     hk_col_excess = calc_excess_colour(glon, glat, config, hk=True)
@@ -116,11 +120,11 @@ def extract_per_feats(lc_dfs, input_df, ls_kwargs, config):
           lc_dfs)
     p.close()
     p.join()
-    print("computed features..")
+    print("computed features.")
     
     feature_df = pd.DataFrame.from_dict(features)
     
-    final_feature_df = finalise_feats(features_df, input_df, config)
+    final_feature_df = finalise_feats(feature_df, input_df, config)
     print("finalised.")
     
     return final_feature_df
