@@ -13,10 +13,7 @@ class extinction_map_healpix(object):
     based on galactic coords or source
     
     """
-    def __init__(self, config, version='v2_NEW_JK_PUBLIC'):
-        
-        #Path to extinction map
-        pathtofile = str(config['path_extinction_map'])
+    def __init__(self, pathtofile, version='v2_NEW_JK_PUBLIC'):
         
         self.version = version
         self.ff = pd.read_csv(pathtofile+'_%s.csv'%self.version)

@@ -1,18 +1,24 @@
 import pandas as pd
 import numpy as np
 
-from compute_feats import source_feat_extract
-from extinction_map import extinction_map_healpix
+from multiprocessing import Pool
+from functools import partial
+
+from .compute_feats import source_feat_extract
+from .extinction_map import extinction_map_healpix
 
 def calc_excess_colour(glon, glat, config, jk=False, hk=False):
     """
     Returns colour excess of J-K or H-K colour from extinction map
     
     """
+    #Path to extinction map
+    pathtofile = str(config['path_extinction_map'])
+    
     if jk:
-        extM = extinction_map_healpix(version='v2_NEW_JK_PUBLIC', config)
+        extM = extinction_map_healpix(pathtofile, version='v2_NEW_JK_PUBLIC')
     elif hk:
-        extM = extinction_map_healpix(version='v2_NEW_HK_PUBLIC', config)
+        extM = extinction_map_healpix(pathtofile, version='v2_NEW_HK_PUBLIC')
         
     col_excess = extM.query(glon,glat)
     
@@ -40,20 +46,12 @@ def add_colour_info(df, config):
 
 def find_princ(angles):
     """
-    Find principal angles for phases
+    Find principal angles for phases in 0<=theta<=2*pi range
     
     """
-    corr_phi = []
-    for i in angles:
-        if i>0:
-            corr = float(i)%(2*np.pi)
-        elif i<0:
-            corr = -float(abs(i))%(2*np.pi)
-        else:
-            corr = float(i)
-        corr_phi.append(corr)
+    corr_angs = np.remainder(np.array(angles), 2*np.pi)
         
-    return np.array(corr_phi)
+    return corr_angs
 
 
 def construct_final_df(df_use):
@@ -67,6 +65,7 @@ def construct_final_df(df_use):
     phi1 = find_princ(df_use['phi_1'].values)
     phi2 = find_princ(df_use['phi_2'].values)
     phi3 = find_princ(df_use['phi_3'].values)
+    
     # phase differences based on def phi_{ij} = phi_i - i phi_j
     df_use['phi0_phi1'] = phi0-phi1
     df_use['phi0_phi2'] = phi0-phi2
@@ -91,12 +90,13 @@ def finalise_feats(features_df, input_df, config):
     
     """
     
+    print("merging feature dfs..")
     # Merge with input stats df
     df_match = features_df.merge(right=input_df, how='inner', on='sourceid').dropna(subset=['sourceid'])
-    
+    print("merged --- loading colour info..")
     # Add reddening free colour info
     add_colour_info(df_match, config)
-    
+    print("loaded colour info --- finalising..")
     # Finalise features
     construct_final_df(df_match)
     
@@ -110,15 +110,18 @@ def extract_per_feats(lc_dfs, input_df, ls_kwargs, config):
     
     """
     
-    p = Pool(config['var_cores'])
-    features = p.map(partial(source_feat_extract, ls_kwargs, config),
+    print("computing features..")
+    p = Pool(int(config['var_cores']))
+    features = p.map(partial(source_feat_extract, ls_kwargs=ls_kwargs, config=config),
           lc_dfs)
     p.close()
     p.join()
+    print("computed features..")
     
     feature_df = pd.DataFrame.from_dict(features)
     
     final_feature_df = finalise_feats(features_df, input_df, config)
+    print("finalised.")
     
     return final_feature_df
     

@@ -9,7 +9,10 @@ from astropy.coordinates import SkyCoord
 from multiprocessing import Pool
 from functools import partial
 
-import lc_utils
+from .lc_utils import *
+
+# Earth coord global
+paranal = coord.EarthLocation.of_site('paranal')
 
 def magarr_stats(data):
     """
@@ -69,7 +72,7 @@ def periodic_feats(data, nterms=4, npoly=1):
     else:
         rang+=1
         
-    results = lc_utils.fourier_poly_chi2_fit_full(times=times,
+    results = fourier_poly_chi2_fit_full(times=times,
                                          mag=mags,
                                          err=err,
                                          f0=1/span,
@@ -83,8 +86,8 @@ def periodic_feats(data, nterms=4, npoly=1):
                                          use_power_of_2=True)
     
     # Calculate delta log likelihood between periodic and constant Gaussian scatter models
-    pred_mean = lc_utils.retrieve_fourier_poly(times=times, results=results)
-    delta_loglik = lc_utils.get_delta_log_likelihood(mags, err, pred_mean=pred_mean)
+    pred_mean = retrieve_fourier_poly(times=times, results=results)
+    delta_loglik = get_delta_log_likelihood(mags, err, pred_mean=pred_mean)
     
     # Extract relevant Fourier terms
     amps = np.array(results['amplitudes'])
@@ -111,7 +114,7 @@ def periodic_feats_force(data, period, nterms=4, npoly=1):
     f1 = 1./(period)
     Nf = 2
         
-    results = lc_utils.fourier_poly_chi2_fit_full(times=times,
+    results = fourier_poly_chi2_fit_full(times=times,
                                          mag=mags,
                                          err=err,
                                          f0=f0,
@@ -125,8 +128,8 @@ def periodic_feats_force(data, period, nterms=4, npoly=1):
                                          use_power_of_2=True)
     
     # Calculate delta log likelihood between periodic and constant Gaussian scatter models
-    pred_mean = lc_utils.retrieve_fourier_poly(times=times, results=results)
-    delta_loglik = lc_utils.get_delta_log_likelihood(mags, err, pred_mean=pred_mean)
+    pred_mean = retrieve_fourier_poly(times=times, results=results)
+    delta_loglik = get_delta_log_likelihood(mags, err, pred_mean=pred_mean)
     
     # Extract relevant Fourier terms
     amps = np.array(results['amplitudes'])
@@ -166,7 +169,7 @@ def quality_cut(data, chicut=5., ast_cut=11.829, amb_corr=True):
     """
     maglimit = 13.2 ## BASED ON EXPERIMENTS WITH MATSUNAGA
     
-    data = data[~((data['chi'] > dpchicut) &
+    data = data[~((data['chi'] > chicut) &
                 (data['mag'] < maglimit))].reset_index(drop=True)
     data = data[~(data['ast_res_chisq']>ast_cut)].reset_index(drop=True)
     
@@ -189,7 +192,7 @@ def sigclipper(data, sig_thresh=4.):
     return data[np.abs(data['mag'].values - midd) / stdd < sig_thresh].reset_index(
         drop=True)
     
-def source_feat_extract(data, ls_kwargs={}, config):
+def source_feat_extract(data, config, ls_kwargs={}):
     """
     Wrapper to extract all features for a given
     source light curve (panda format).
@@ -200,18 +203,20 @@ def source_feat_extract(data, ls_kwargs={}, config):
     
     columns of light curves:
     ['sourceid' 'mjdobs' 'mag' 'error' 'ambiguous_match' 'ast_res_chisq' 'chi']
+    
     """
-    # Get Source info
+    # Split source info
     ra, dec, lc = data[0],data[1],data[2]
     sourceid = lc['sourceid'].values[0]
     
     # Correct MJD to HJD
     correct_to_HJD(lc, ra, dec)
     
-    # Need to inlcude quality cuts for amb_match, ast_res_chisq, chi
-    # Pre-process light curve data with quality cut and 3 sigma conservative cut 
-    lc_clean = sigclipper(quality_cut_phot(lc, config['chi_cut'],config['ast_cut'],
-                                           config['amb_correction']), config['sig_thresh'])
+    # Pre-process light curve data with quality cuts and 3 sigma conservative cut 
+    chi_cut, ast_cut = float(config['chi_cut']), float(config['ast_cut'])
+    amb_corr = bool(config['amb_correction'])
+    sig_thresh = float(config['sig_thresh'])
+    lc_clean = sigclipper(quality_cut(lc, chi_cut, ast_cut, amb_corr), sig_thresh)
     
     # Length check post quality cuts
     if len(lc_clean)<=1:
@@ -221,14 +226,15 @@ def source_feat_extract(data, ls_kwargs={}, config):
     nonper_feats = magarr_stats(lc_clean)
     
     # Exract light-curve summary periodic statistics from Fourier analysis
-    per_dict = lc_utils.lombscargle_stats(lc_clean, **ls_kwargs)
+    per_dict = lombscargle_stats(lc_clean, **ls_kwargs)
     
-    if config['force_method']:
+    nterms, npoly = int(config['nterms']), int(config['npoly'])
+    if bool(config['force_method']):
         per_feats = periodic_feats_force(lc_clean, period=per_dict['ls_period'],
-                                     nterms=config['nterms'], npoly=config['npoly'])
+                                     nterms=nterms, npoly=npoly)
     else:
         per_feats = periodic_feats(lc_clean, period=per_dict['ls_period'],
-                                     nterms=config['nterms'], npoly=config['npoly'])
+                                     nterms=nterms, npoly=npoly)
     
     features = {'sourceid':sourceid, **per_feats, **per_dict, **nonper_feats}
     
