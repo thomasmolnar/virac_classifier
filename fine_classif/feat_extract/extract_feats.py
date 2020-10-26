@@ -36,9 +36,9 @@ def add_colour_info(df, config):
 #     jmag = df.j_ivw_mean_mag .values
 #     hmag = df.h_ivw_mean_mag.values
 #     kmag = df.ks_ivw_mean_mag.values
-    jmag = df.j_a_ivw_mean_mag .values
-    hmag = df.h_a_ivw_mean_mag.values
-    kmag = df.ks_a_ivw_mean_mag.values
+    jmag = df.j_b_ivw_mean_mag .values
+    hmag = df.h_b_ivw_mean_mag.values
+    kmag = df.ks_b_ivw_mean_mag.values
         
     jk_col_excess = calc_excess_colour(glon, glat, config, jk=True)
     hk_col_excess = calc_excess_colour(glon, glat, config, hk=True)

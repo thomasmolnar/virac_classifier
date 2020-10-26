@@ -6,17 +6,15 @@ config.request_password()
 
 file_path = '/data/jls/virac/'
 
-with h5py.File(file_path+'n512_2318830.hdf5', 'r') as f:
-    randints = np.sort(np.random.randint(0,55000,20))
-s=f['sourceList']['sourceid'][:][randints]
-ra=f['sourceList']['ra'][:][randints]
-dec=f['sourceList']['dec'][:][randints]
-
 data = pd.DataFrame()
-data['sourceid'] = s
-data['ra'] = ra
-data['dec'] = dec
+with h5py.File(file_path+'n512_2318830.hdf5', 'r') as f:
+    randints = np.sort(np.random.randint(0,55000,50))
+    for s in f['sourceList'].keys():
+        data[s] = f['sourceList'][s][:][randints]
 
-test_feats = get_periodic_features(data, config)
+data = data[data['ks_n_detections']>20].reset_index(drop=True)
+
+lightcurve_loader = lightcurve_loader()
+test_feats = get_periodic_features(data, lightcurve_loader, config)
 
 test_feats.to_pickle('test_var_out.pkl')

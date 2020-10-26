@@ -806,14 +806,14 @@ def find_lag(times, period):
         return {'time_lag_mean':np.nan, 'time_lag_median':np.nan, 'max_time_lag':np.nan}
     
     # Calculate summary statistics of difference array
-    t_max = times_fld_diff.max()
-    mean = np.mean(times_fld_diff)
-    median = np.median(times_fld_diff)
-    sd = np.std(times_fld_diff)
+    t_max = np.nanmax(times_fld_diff)
+    mean = np.nanmean(times_fld_diff)
+    median = np.nanmedian(times_fld_diff)
+    sd = np.nanstd(times_fld_diff)
     
     # Dispersion of max
-    mean_disp = abs(t_max-mean)/sd
-    median_disp = abs(t_max-median)/sd
+    mean_disp = np.abs(t_max-mean)/sd
+    median_disp = np.abs(t_max-median)/sd
     
     return {'time_lag_mean':mean_disp, 'time_lag_median':median_disp, 'max_time_lag':t_max}
 
