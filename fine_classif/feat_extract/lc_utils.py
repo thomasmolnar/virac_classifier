@@ -660,7 +660,7 @@ def fourier_poly_chi2_fit_full(times,
                                keep_small=True,
                                regularize_by_trace=True, 
                                code_switch=True,
-                               use_power_of_2=True):
+                               use_power_of_2=True, force=False):
     '''
         Wrapper of main algorithm to do all the post-processing
         
@@ -699,7 +699,7 @@ def fourier_poly_chi2_fit_full(times,
     
     
     results['chi_squared_grid'] = results.pop('power')
-
+    
     # Fill with best result
     argc = np.argmin(results['chi_squared_grid'])
 
@@ -714,7 +714,13 @@ def fourier_poly_chi2_fit_full(times,
     results['lsq_time_zeropoint_poly'] = time_zeropoint_poly
     results['lsq_regularize_by_trace'] = regularize_by_trace
     results['lsq_chi_squared'] = results['chi_squared_grid'][argc]
-
+    
+    if force:
+        pass
+    else:
+        disp_min = results['lsq_chi_squared']/np.mean(results['chi_squared_grid'])
+        results['lsq_chi2_min_disp'] = disp_min
+    
     results = lsq_fit_find_uncertainties(results, argc)
 
     # Compute amplitudes & phases
@@ -752,11 +758,6 @@ def fourier_poly_chi2_fit_full(times,
             (len(results['amplitudes']), len(results['amplitudes'])))
         results['phases_cov'] = np.nan * np.ones(
             (len(results['phases']), len(results['phases'])))
-
-#     results['lsq_period'] = results['lsq_period_original'] / (
-#         1. + np.argmax(results['amplitudes']))
-#     results['lsq_period_error'] = results['lsq_period_original_error'] / (
-#         1. + np.argmax(results['amplitudes']))
     
     if np.argmax(results['amplitudes'])!=0.:
         double_result= fourier_poly_chi2_fit_full(times,
@@ -791,33 +792,6 @@ def fourier_poly_chi2_fit_full(times,
     return results
 
 
-def find_lag(times, period):
-    """
-    Find probabilistic metrics to determine if the time between observations of phase folded light curves constitute 'lagging'
-    
-    """
-    
-    # Find time diffs of ordered phase folded light curve
-    times_fld = times%(period)
-    times_fld_ord = np.sort(times_fld)
-    times_fld_diff = np.diff(times_fld_ord)
-    
-    if len(times_fld_diff)==0:
-        return {'time_lag_mean':np.nan, 'time_lag_median':np.nan, 'max_time_lag':np.nan}
-    
-    # Calculate summary statistics of difference array
-    t_max = np.nanmax(times_fld_diff)
-    mean = np.nanmean(times_fld_diff)
-    median = np.nanmedian(times_fld_diff)
-    sd = np.nanstd(times_fld_diff)
-    
-    # Dispersion of max
-    mean_disp = np.abs(t_max-mean)/sd
-    median_disp = np.abs(t_max-median)/sd
-    
-    return {'time_lag_mean':mean_disp, 'time_lag_median':median_disp, 'max_time_lag':t_max}
-
-
 def power_stats(power):
     """
     Find dispersion of maximum power computed about mean and median
@@ -831,7 +805,7 @@ def power_stats(power):
     mean_disp = abs(max_pow-mean)/sd
     med_disp = abs(max_pow-median)/sd
     
-    return {'pow_mean_disp':mean_disp, 'pow_med_disp':med_disp}
+    return {'pow_mean_disp':mean_disp}
 
 
 def lombscargle_stats(data, **ls_kwargs):
@@ -860,14 +834,11 @@ def lombscargle_stats(data, **ls_kwargs):
     periods = 1./freq   
     period = periods[max_pow_arg]
     
-    # Find metric showing time lag
-    time_lag = find_lag(data[fld], period)
-    
     # Find power array stats
     pow_stats = power_stats(power)
     
     return {'ls_period':period, 'max_pow':max_pow,
-            **pow_stats, **time_lag}
+            **pow_stats}
 
 
 def retrieve_fourier(phase, fourier_components):

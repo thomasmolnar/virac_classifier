@@ -6,6 +6,7 @@ from functools import partial
 from .compute_feats import source_feat_extract
 from .extinction_map import extinction_map_healpix
 
+
 def calc_excess_colour(glon, glat, config, jk=False, hk=False):
     """
     Returns colour excess of J-K or H-K colour from extinction map
@@ -33,9 +34,6 @@ def add_colour_info(df, config):
     glon = df.l.values
     glat = df.b.values
     ## Need to check columns names for filter phots
-#     jmag = df.j_ivw_mean_mag .values
-#     hmag = df.h_ivw_mean_mag.values
-#     kmag = df.ks_ivw_mean_mag.values
     jmag = df.j_b_ivw_mean_mag .values
     hmag = df.h_b_ivw_mean_mag.values
     kmag = df.ks_b_ivw_mean_mag.values
@@ -93,13 +91,12 @@ def finalise_feats(features_df, input_df, config):
     
     """
     
-    print("merging feature dfs..")
     # Merge with input stats df
     df_match = features_df.merge(right=input_df, how='inner', on='sourceid').dropna(subset=['sourceid'])
-    print("merged --- loading colour info..")
+    
     # Add reddening free colour info
     add_colour_info(df_match, config)
-    print("loaded colour info --- finalising..")
+    
     # Finalise features
     construct_final_df(df_match)
     
@@ -112,19 +109,15 @@ def extract_per_feats(lc_dfs, input_df, ls_kwargs, config):
     in panda format
     
     """
-    
-    print("computing features..")
     p = Pool(int(config['var_cores']))
     features = p.map(partial(source_feat_extract, ls_kwargs=ls_kwargs, config=config),
           lc_dfs)
     p.close()
     p.join()
-    print("computed features.")
-    
+
     feature_df = pd.DataFrame.from_dict(features)
-    
+
     final_feature_df = finalise_feats(feature_df, input_df, config)
-    print("finalised.")
-    
+
     return final_feature_df
     

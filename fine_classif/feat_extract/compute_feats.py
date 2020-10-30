@@ -41,17 +41,6 @@ def magarr_stats(data):
     return out
 
 
-def time_span(times):
-    """
-    Returns the time span of observational epochs
-    
-    """
-    max_t, min_t = np.max(times), np.min(times)
-    span = max_t - min_t
-    
-    return span
-
-
 def periodic_feats(data, nterms=4, npoly=1):
     """
     Returns periodic features (fourier components) of photometric lightcurves
@@ -61,12 +50,12 @@ def periodic_feats(data, nterms=4, npoly=1):
     mags = data.mag.values
     err = data.error.values
     
-    #dt = 0.1/t_range from classification paper
-    span = round(time_span(times))
+    # dt = 0.1/T_range from classification literature
+    span = math.ceil(np.max(times)-np.min(times))
     sep = 0.1/span
     rang = math.ceil((20.-(1/span))/sep)
     
-    #Need range to be even
+    # Need range to be even
     if rang % 2 == 0:
         pass
     else:
@@ -83,7 +72,7 @@ def periodic_feats(data, nterms=4, npoly=1):
                                          regularization=0.1,
                                          keep_small=True, 
                                          code_switch=True,
-                                         use_power_of_2=True)
+                                         use_power_of_2=True, force=False)
     
     # Calculate delta log likelihood between periodic and constant Gaussian scatter models
     pred_mean = retrieve_fourier_poly(times=times, results=results)
@@ -94,9 +83,12 @@ def periodic_feats(data, nterms=4, npoly=1):
     phases = np.array(results['phases'])
     per = float(results['lsq_period'])
     
+    # Dispersion of min chi2
+    disp_min_chi2 = results['lsq_chi2_min_disp']
+    
     return {'lsq_period':per, 'amp_0':amps[0], 'amp_1':amps[1], 'amp_2':amps[2],
             'amp_3':amps[3], 'phi_0':phases[0], 'phi_1':phases[1], 'phi_2':phases[2],
-            'phi_3':phases[3], 'delta_loglik':delta_loglik}
+            'phi_3':phases[3], 'delta_loglik':delta_loglik, 'disp_min_chi2':disp_min_chi2}
 
 
 def periodic_feats_force(data, period, nterms=4, npoly=1):
@@ -125,7 +117,7 @@ def periodic_feats_force(data, period, nterms=4, npoly=1):
                                          regularization=0.1,
                                          keep_small=True, 
                                          code_switch=True,
-                                         use_power_of_2=True)
+                                         use_power_of_2=True, force=True)
     
     # Calculate delta log likelihood between periodic and constant Gaussian scatter models
     pred_mean = retrieve_fourier_poly(times=times, results=results)
@@ -139,6 +131,32 @@ def periodic_feats_force(data, period, nterms=4, npoly=1):
     return {'lsq_period':per, 'amp_0':amps[0], 'amp_1':amps[1], 'amp_2':amps[2],
             'amp_3':amps[3], 'phi_0':phases[0], 'phi_1':phases[1], 'phi_2':phases[2],
             'phi_3':phases[3], 'delta_loglik':delta_loglik}
+
+def find_lag(data, period):
+    """
+    Find probabilistic metrics to determine if the time between observations of phase folded light curves constitute 'lagging'
+    
+    """
+    times = data.HJD.values
+    
+    # Find time diffs of ordered phase folded light curve
+    times_fld = times%(period)
+    times_fld_ord = np.sort(times_fld)
+    times_fld_diff = np.diff(times_fld_ord)
+    
+    if len(times_fld_diff)==0:
+        return {'error':True}
+    
+    # Calculate summary statistics of difference array
+    t_max = np.nanmax(times_fld_diff)
+    mean = np.nanmean(times_fld_diff)
+    median = np.nanmedian(times_fld_diff)
+    sd = np.nanstd(times_fld_diff)
+    
+    # Dispersion of max
+    mean_disp = np.abs(t_max-mean)/sd
+    
+    return {'time_lag_mean':mean_disp, 'max_time_lag':t_max}
 
 
 def correct_to_HJD(data, ra, dec):
@@ -173,7 +191,7 @@ def quality_cut(data, chicut=5., ast_cut=11.829, amb_corr=True):
                 (data['mag'] < maglimit))].reset_index(drop=True)
     data = data[~(data['ast_res_chisq']>ast_cut)].reset_index(drop=True)
     
-    if amb_corr:
+    if amb_corr=='True':
         data = data[~(data['ambiguous_match'])].reset_index(drop=True)
     
     return data
@@ -191,7 +209,7 @@ def sigclipper(data, sig_thresh=4.):
     
     return data[np.abs(data['mag'].values - midd) / stdd < sig_thresh].reset_index(
         drop=True)
-    
+
 def source_feat_extract(data, config, ls_kwargs={}):
     """
     Wrapper to extract all features for a given
@@ -214,28 +232,34 @@ def source_feat_extract(data, config, ls_kwargs={}):
     
     # Pre-process light curve data with quality cuts and 3 sigma conservative cut 
     chi_cut, ast_cut = float(config['chi_cut']), float(config['ast_cut'])
-    amb_corr = bool(config['amb_correction'])
+    amb_corr = config['amb_correction']
     sig_thresh = float(config['sig_thresh'])
     lc_clean = sigclipper(quality_cut(lc, chi_cut, ast_cut, amb_corr), sig_thresh)
     
     # Length check post quality cuts
-    if len(lc_clean)<=1:
-        return {'sourceid':sourceid, 'small':True}
+    if len(lc_clean)<=int(config['n_detection_threshold']):
+        return {'sourceid':sourceid, 'error':True}
     
     # Extract non-periodic statistics 
-    nonper_feats = magarr_stats(lc_clean)
-    
-    # Exract light-curve summary periodic statistics from Fourier analysis
-    per_dict = lombscargle_stats(lc_clean, **ls_kwargs)
+    nonper_feats = magarr_stats(lc_clean)    
     
     nterms, npoly = int(config['nterms']), int(config['npoly'])
-    if bool(config['force_method']):
+    
+    # Division into forced frequency grid input or not for lsq comp.
+    # Through testing the 'unforced' method takes the same amount of time and hence
+    # is to be used, as will provide a more accurate period for asymmetrical light curves
+    if config['force_method']=='True':
+        per_dict = lombscargle_stats(lc_clean, **ls_kwargs)
         per_feats = periodic_feats_force(lc_clean, period=per_dict['ls_period'],
                                      nterms=nterms, npoly=npoly)
+        lag_feats = find_lag(lc_clean, period=per_dict['ls_period'])
+        
+        features = {'sourceid':sourceid, **per_feats, **per_dict, **nonper_feats, **lag_feats}
+        
     else:
-        per_feats = periodic_feats(lc_clean, period=per_dict['ls_period'],
-                                     nterms=nterms, npoly=npoly)
-    
-    features = {'sourceid':sourceid, **per_feats, **per_dict, **nonper_feats}
-    
+        per_feats = periodic_feats(lc_clean, nterms=nterms, npoly=npoly)
+        lag_feats = find_lag(lc_clean, period=per_feats['lsq_period'])
+        
+        features = {'sourceid':sourceid, **per_feats, **nonper_feats, **lag_feats}
+
     return features
