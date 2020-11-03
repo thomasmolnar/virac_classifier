@@ -11,13 +11,13 @@ try:
 except:
     pass
 
-def feat_clip(df_inp, data_cols, target_cols, impute=False, qmin=0.5, qmax=99.5):
+def feat_clip(df_inp, data_cols, target_cols, impute=False, qmin=0.5, qmax=99.5, return_full=False):
     """
     Outlier clip outside of 0.5th and 99.5th percentile
     
     """
-    df = df_inp[data_cols + target_cols].copy()
-    df.replace([np.inf, -np.inf], np.nan, inplace=True)
+    df = df_inp.copy()
+    df[data_cols + target_cols] = df[data_cols + target_cols].replace([np.inf, -np.inf], np.nan)
     
     if impute:
         for i in data_cols:
@@ -28,8 +28,11 @@ def feat_clip(df_inp, data_cols, target_cols, impute=False, qmin=0.5, qmax=99.5)
     for i in data_cols:
         bot = np.nanpercentile(df[i], qmin)
         top = np.nanpercentile(df[i], qmax)
-        fltr &= (df[i]>bot)&(df[i]<top)
+        fltr &= (df[i]>=bot)&(df[i]<=top)    
     df = df[fltr].reset_index(drop=True)
+    
+    if not return_full:
+        df = df[data_cols + target_cols]
     
     print("{}% sources removed from clip.".format(round(len(df_inp)/len(df)-1, 4)*100))
     return df

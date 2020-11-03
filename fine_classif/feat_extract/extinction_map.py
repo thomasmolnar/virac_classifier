@@ -14,7 +14,7 @@ class extinction_map_healpix(object):
     based on galactic coords or source
     
     """
-    def __init__(self, pathtofile, version='v2_NEW_JK_PUBLIC'):
+    def __init__(self, pathtofile, version='v2_NEW_JK_PHOTSTATS'):
         
         self.version = version
         self.ff = pd.read_csv(pathtofile+'_%s.csv'%self.version)

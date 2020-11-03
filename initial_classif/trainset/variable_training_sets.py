@@ -12,7 +12,7 @@ def load_all_variable_stars(config, test=False):
     dsets = dsets.sort_values(by='virac2_id').reset_index(drop=True)
     
     if test:
-        dsets = dsets.sample(n=500).reset_index(drop=True)
+        dsets = dsets.sample(n=3000).reset_index(drop=True)
     
     dsets = cm_virac_stats_table(dsets, config)
 

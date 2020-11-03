@@ -140,7 +140,7 @@ class lightcurve_loader(object):
         Split Astropy Table of lightcurves into list of pandas for each light curve
         (ordered sourceid column not needed)
 
-        Output in form [ra, dec, lc] - ra/dec needed to corred MJD to HJD
+        Output in form [ra, dec, lc] - ra/dec needed to correct MJD to HJD
         (easiest to include now)
         """
         inp_sourceids = data['sourceid'].values
