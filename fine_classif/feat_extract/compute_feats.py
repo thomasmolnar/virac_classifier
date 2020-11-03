@@ -14,23 +14,20 @@ from .lc_utils import *
 # Earth coord global
 paranal = coord.EarthLocation.of_site('paranal')
 
-def magarr_stats(data):
+def magarr_stats(mags):
     """
     Returns simple dict of population statistics of timeseries photometric data
     
     """
-    mags = data.mag.values
-    
     # Get common statistics
     nobs, minmax, mean, var, skew, kurt = stats.describe(mags)
     sd = np.sqrt(var)
     amp = (minmax[1]-minmax[0])/2.
     
     # Comp range statisitics
-    beyond = data[(mags < float(mean+sd))].reset_index(drop=True)
-    beyond = beyond[(beyond.mag.values > float(mean-sd))].reset_index(drop=True)
-    within = len(beyond)
-    beyondfrac = (len(mags)-within)/len(mags)
+    beyond = mags[(mags < float(mean+sd))]
+    beyond = beyond[(beyond > float(mean-sd))]
+    beyondfrac = (mags.size-beyond.size)/mags.size
     median = np.median(mags)
     magdev = mags - median
     med_magdev = np.median(magdev)
@@ -41,32 +38,32 @@ def magarr_stats(data):
     return out
 
 
-def periodic_feats(data, nterms=4, npoly=1):
+def periodic_feats(times, mags, errors, nterms=4, npoly=1, max_freq=20.):
     """
     Returns periodic features (fourier components) of photometric lightcurves
     
     """
-    times = data.HJD.values
-    mags = data.mag.values
-    err = data.error.values
+    # df = 0.2/baseline -- same as LombScargle/timeseries literature
+    baseline = times.max() - times.min()
+    df = 0.2 / baseline
     
-    # dt = 0.1/T_range from classification literature
-    span = math.ceil(np.max(times)-np.min(times))
-    sep = 0.1/span
-    rang = math.ceil((20.-(1/span))/sep)
+    f0 = 0.5 * df
+    Nf = 1 + int(np.round((max_freq - f0) / df))
     
-    # Need range to be even
-    if rang % 2 == 0:
+    # Require range to be even
+    if Nf % 2 == 0:
         pass
     else:
-        rang+=1
-        
+        Nf += 1
+    
+    #print("LSQ method: max_freq={}, min_freq={} -- with Nf={}".format(max_freq, f0, Nf))             
+    
     results = fourier_poly_chi2_fit_full(times=times,
                                          mag=mags,
-                                         err=err,
-                                         f0=1/span,
-                                         f1=20.,
-                                         Nf=rang,
+                                         err=errors,
+                                         f0=f0,
+                                         f1=max_freq,
+                                         Nf=Nf,
                                          nterms=nterms,
                                          npoly=npoly,
                                          regularization=0.1,
@@ -76,7 +73,7 @@ def periodic_feats(data, nterms=4, npoly=1):
     
     # Calculate delta log likelihood between periodic and constant Gaussian scatter models
     pred_mean = retrieve_fourier_poly(times=times, results=results)
-    delta_loglik = get_delta_log_likelihood(mags, err, pred_mean=pred_mean)
+    delta_loglik = get_delta_log_likelihood(mags, errors, pred_mean=pred_mean)
     
     # Extract relevant Fourier terms
     amps = np.array(results['amplitudes'])
@@ -91,24 +88,21 @@ def periodic_feats(data, nterms=4, npoly=1):
             'phi_3':phases[3], 'delta_loglik':delta_loglik, 'disp_min_chi2':disp_min_chi2}
 
 
-def periodic_feats_force(data, period, nterms=4, npoly=1):
+def periodic_feats_force(times, mags, errors, period, nterms=4, npoly=1):
     """
     Returns periodic features (fourier components) of photometric lightcurves
     with forced frequency input grid (determined from LombScargle)
     
     """
-    times = data.HJD.values
-    mags = data.mag.values
-    err = data.error.values
     
     # Forced frequency grid 
-    f0 = 1./(2*period)
-    f1 = 1./(period)
-    Nf = 2
+    f0 = 1. / (4*period)
+    f1 = 1. / (period)
+    Nf = 10
         
     results = fourier_poly_chi2_fit_full(times=times,
                                          mag=mags,
-                                         err=err,
+                                         err=errors,
                                          f0=f0,
                                          f1=f1,
                                          Nf=Nf,
@@ -121,7 +115,7 @@ def periodic_feats_force(data, period, nterms=4, npoly=1):
     
     # Calculate delta log likelihood between periodic and constant Gaussian scatter models
     pred_mean = retrieve_fourier_poly(times=times, results=results)
-    delta_loglik = get_delta_log_likelihood(mags, err, pred_mean=pred_mean)
+    delta_loglik = get_delta_log_likelihood(mags, errors, pred_mean=pred_mean)
     
     # Extract relevant Fourier terms
     amps = np.array(results['amplitudes'])
@@ -132,19 +126,17 @@ def periodic_feats_force(data, period, nterms=4, npoly=1):
             'amp_3':amps[3], 'phi_0':phases[0], 'phi_1':phases[1], 'phi_2':phases[2],
             'phi_3':phases[3], 'delta_loglik':delta_loglik}
 
-def find_lag(data, period):
+def find_lag(times, period):
     """
     Find probabilistic metrics to determine if the time between observations of phase folded light curves constitute 'lagging'
     
     """
-    times = data.HJD.values
-    
     # Find time diffs of ordered phase folded light curve
     times_fld = times%(period)
     times_fld_ord = np.sort(times_fld)
     times_fld_diff = np.diff(times_fld_ord)
     
-    if len(times_fld_diff)==0:
+    if times_fld_diff.size==0:
         return {'error':True}
     
     # Calculate summary statistics of difference array
@@ -240,26 +232,31 @@ def source_feat_extract(data, config, ls_kwargs={}):
     if len(lc_clean)<=int(config['n_detection_threshold']):
         return {'sourceid':sourceid, 'error':True}
     
-    # Extract non-periodic statistics 
-    nonper_feats = magarr_stats(lc_clean)    
-    
+    # Timeseries data
     nterms, npoly = int(config['nterms']), int(config['npoly'])
-    
+    times = np.array(lc_clean.HJD.values)
+    mags = np.array(lc_clean.mag.values)
+    errors = np.array(lc_clean.error.values)
+                 
+    # Extract non-periodic statistics 
+    nonper_feats = magarr_stats(mags)    
+                 
     # Division into forced frequency grid input or not for lsq comp.
     # Through testing the 'unforced' method takes the same amount of time and hence
     # is to be used, as will provide a more accurate period for asymmetrical light curves
     if config['force_method']=='True':
-        per_dict = lombscargle_stats(lc_clean, **ls_kwargs)
-        per_feats = periodic_feats_force(lc_clean, period=per_dict['ls_period'],
-                                     nterms=nterms, npoly=npoly)
-        lag_feats = find_lag(lc_clean, period=per_dict['ls_period'])
-        
-        features = {'sourceid':sourceid, **per_feats, **per_dict, **nonper_feats, **lag_feats}
+        per_dict = lombscargle_stats(times, mags, errors, **ls_kwargs)
+        per_feats = periodic_feats_force(times, mags, errors, per_dict['ls_period'], nterms, npoly)
+        lag_feats = find_lag(times, period=per_dict['ls_period'])
+                 
+        features = {'sourceid':sourceid,
+                    **per_feats, **per_dict, **nonper_feats, **lag_feats}
         
     else:
-        per_feats = periodic_feats(lc_clean, nterms=nterms, npoly=npoly)
-        lag_feats = find_lag(lc_clean, period=per_feats['lsq_period'])
+        per_feats = periodic_feats(times, mags, errors, nterms, npoly)
+        lag_feats = find_lag(times, period=per_feats['lsq_period'])
         
-        features = {'sourceid':sourceid, **per_feats, **nonper_feats, **lag_feats}
+        features = {'sourceid':sourceid,
+                    **per_feats, **nonper_feats, **lag_feats}
 
     return features

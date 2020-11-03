@@ -808,25 +808,18 @@ def power_stats(power):
     return {'pow_mean_disp':mean_disp}
 
 
-def lombscargle_stats(data, **ls_kwargs):
+def lombscargle_stats(times, mags, errors, **ls_kwargs):
     """
     LombScargle analysis of lightcurve to extract certain summary statistics
     
     """
-    # Find the time field
-    fld = find_time_field(data)
-    
-    if 'error' in data.keys():
-        errors = data['error']
-    else:
-        errors = None
         
     # Initialise model
-    model = LombScargle(data[fld], 
-                            data['mag'], errors,
-                           normalization='standard')
+    model = LombScargle(times, mags, errors, normalization='standard')
         
     freq, power = model.autopower(**ls_kwargs)
+    
+    #print("LS method: max_freq={}, min_freq={} -- with Nf={}".format(freq.max(), freq.min(), freq.size))
     
     # Find max power and hence most likely period
     max_pow = power.max()
