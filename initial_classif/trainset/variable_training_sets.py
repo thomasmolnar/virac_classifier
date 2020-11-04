@@ -2,23 +2,28 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 import pickle
-from interface_utils.add_stats import cm_virac_stats_table
+from sqlutilpy import *
+from interface_utils.add_stats import main_string, var_string
 
-def load_all_variable_stars(config, test=False):
+def load_all_variable_stars(config):
     
-    with open(config['variable_dir']+'var_trainset_virac2.pkl', 'rb') as f:
-        dsets = pickle.load(f)
+    test_string = ''
+    if int(config['test']):
+        test_string = 'limit 10000'
     
-    dsets = dsets.sort_values(by='virac2_id').reset_index(drop=True)
-    
-    if test:
-        dsets = dsets.sample(n=3000).reset_index(drop=True)
-    
-    dsets = cm_virac_stats_table(dsets, config)
+    dsets = pd.DataFrame(
+            sqlutil.get("""select {0}, v.cat_period, v.var_class, 
+                            y.j_b_ivw_mean_mag, y.h_b_ivw_mean_mag, y.ks_b_ivw_mean_mag, 
+                                {1} from jason_sanders.variable_training_set_virac2 as v
+                            inner join leigh_smith.virac2 as t on t.sourceid=v.virac_id
+                            inner join leigh_smith.virac2_photstats as y on y.sourceid=v.virac_id
+                            inner join leigh_smith.virac2_var_indices as s on s.sourceid=v.virac_id
+                            {2};""".format(main_string,var_string, test_string),
+                        **config.wsdb_kwargs))
 
     ## Now filter
     dsets = dsets[(dsets['ks_n_detections']>np.int64(config['n_detection_threshold']))&
-                  (dsets['ks_ivw_mean_mag']>np.float64(config['lower_k']))&
-                  (dsets['ks_ivw_mean_mag']<np.float64(config['upper_k']))].reset_index(drop=True)
+                  (dsets['ks_b_ivw_mean_mag']>np.float64(config['lower_k']))&
+                  (dsets['ks_b_ivw_mean_mag']<np.float64(config['upper_k']))].reset_index(drop=True)
     
     return dsets

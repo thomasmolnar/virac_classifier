@@ -34,7 +34,7 @@ def add_colour_info(df, config):
     glon = df.l.values
     glat = df.b.values
     ## Need to check columns names for filter phots
-    jmag = df.j_b_ivw_mean_mag .values
+    jmag = df.j_b_ivw_mean_mag.values
     hmag = df.h_b_ivw_mean_mag.values
     kmag = df.ks_b_ivw_mean_mag.values
         

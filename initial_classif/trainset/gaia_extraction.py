@@ -2,31 +2,64 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 from sqlutilpy import *
-from interface_utils.add_stats import pct_diff
+from interface_utils.add_stats import pct_diff, main_string, var_string
 
 ### Code for the automatic extraction of constant stellar sources, based on population statistics of a predetermined variability measure in Gaia.
 ### WSDB Gaia DR2 (gaia_dr2.gaia_source) table specifications are used.
 
 def grab_virac_gaia_random_sample(random_index_max,config):
     
-    if bool(config['test']):
-        test_string = "and healpix_ang2ipix_ring(512,t.ra,t.dec)=2318830 and t.l<0.897411 and t.l>0.677411 and t.b<0.064603 and t.b>-0.164603;"
+    if int(config['test']):
+        test_string = "and healpix_ang2ipix_ring(512,t.ra,t.dec)=2318830 and t.l<0.897411 and t.l>0.677411 and t.b<0.064603 and t.b>-0.164603"
+        
+        data = pd.DataFrame(sqlutil.get("""
+
+                with t as (select {0} from leigh_smith.virac2 as t where 
+                            duplicate=0 and astfit_params=5 
+                            and ks_n_detections>{2} and ks_ivw_mean_mag>{3} and ks_ivw_mean_mag<{4} {5})
+                select t.*, {1}, y.j_b_ivw_mean_mag, y.h_b_ivw_mean_mag, y.ks_b_ivw_mean_mag, x.sep_arcsec,
+                g.phot_g_mean_flux_over_error, g.phot_g_mean_mag, g.phot_g_n_obs from t
+                inner join leigh_smith.virac2_photstats as y on t.sourceid=y.sourceid
+                inner join leigh_smith.virac2_x_gdr2 as x on x.virac2_id=t.sourceid
+                inner join leigh_smith.virac2_var_indices as s on s.sourceid=t.sourceid
+                inner join gaia_dr2.gaia_source as g on g.source_id=x.gdr2_id
+                where x.sep_arcsec<0.4;""".format(
+                main_string,
+                var_string,
+                np.int64(config['n_detection_threshold']),
+                np.float64(config['lower_k']),
+                np.float64(config['upper_k']),
+                test_string), 
+            **config.wsdb_kwargs))
     else:
-        test_string = "and random_index<%i" % random_index_max
-    
-    data = pd.DataFrame(sqlutil.get("""
-            select t.*, y.j_b_ivw_mean_mag, y.h_b_ivw_mean_mag, y.ks_b_ivw_mean_mag, s.*, x.sep_arcsec,
-            g.phot_g_mean_flux_over_error, g.phot_g_mean_mag, g.phot_g_n_obs
-            from leigh_smith.virac2 as t
-            left join leigh_smith.virac2_photstats as y on t.sourceid=y.sourceid
-            left join leigh_smith.virac2_x_gdr2 as x on x.virac2_id=t.sourceid
-            left join leigh_smith.virac2_var_indices as s on s.sourceid=t.sourceid
-            left join gaia_dr2.gaia_source as g on g.source_id=x.gdr2_id
-            where duplicate=0 and astfit_params=5 and x.sep_arcsec<0.4 
-            and ks_n_detections>%i and ks_ivw_mean_mag>%0.4f and ks_ivw_mean_mag<%0.4f %s"""%(
-        np.int64(config['n_detection_threshold']),
-        np.float64(config['lower_k']),np.float64(config['upper_k']),test_string), 
-                                    **config.wsdb_kwargs))
+        test_string = "random_index<%i" % random_index_max
+        
+        data = pd.DataFrame(sqlutil.get("""
+
+                with t as (
+                    select {0} from leigh_smith.virac2 as t where 
+                            duplicate=0 and astfit_params=5 
+                            and ks_n_detections>{2} and ks_ivw_mean_mag>{3} and ks_ivw_mean_mag<{4}
+                        ),
+                    g as (
+                        with p as (
+                            select source_id, phot_g_mean_flux_over_error, phot_g_mean_mag, phot_g_n_obs from gaia_dr2.gaia_source
+                                where {5})
+                        select phot_g_mean_flux_over_error, phot_g_mean_mag, phot_g_n_obs, virac2_id, sep_arcsec from p
+                        inner join leigh_smith.virac2_x_gdr2 as x on x.gdr2_id=source_id where x.sep_arcsec<0.4
+                        )
+                select t.*, {1}, y.j_b_ivw_mean_mag, y.h_b_ivw_mean_mag, y.ks_b_ivw_mean_mag, 
+                g.phot_g_mean_flux_over_error, g.phot_g_mean_mag, g.phot_g_n_obs, g.sep_arcsec from g
+                inner join leigh_smith.virac2 as t on t.sourceid=g.virac2_id
+                inner join leigh_smith.virac2_photstats as y on y.sourceid=g.virac2_id
+                inner join leigh_smith.virac2_var_indices as s on s.sourceid=g.virac2_id;""".format(
+                main_string,
+                var_string,
+                np.int64(config['n_detection_threshold']),
+                np.float64(config['lower_k']),
+                np.float64(config['upper_k']),
+                test_string), 
+            **config.wsdb_kwargs))
     
     data = pct_diff(data)
     
@@ -50,18 +83,23 @@ def grab_virac_gaia_region_with_stats(l,b,sizel,sizeb,config):
                         %(l-.5*sizel,l+.5*sizel-360.,b-.5*sizeb,b+.5*sizeb)
         
     data = pd.DataFrame(sqlutil.get("""
-            select t.*, y.j_b_ivw_mean_mag, y.h_b_ivw_mean_mag, y.ks_b_ivw_mean_mag, s.*, x.sep_arcsec,
-            g.phot_g_mean_flux_over_error, g.phot_g_mean_mag, g.phot_g_n_obs
-            from leigh_smith.virac2 as t
-            left join leigh_smith.virac2_photstats as y on t.sourceid=y.sourceid
-            left join leigh_smith.virac2_x_gdr2 as x on x.virac2_id=t.sourceid
-            left join leigh_smith.virac2_var_indices as s on s.sourceid=t.sourceid
-            left join gaia_dr2.gaia_source as g on g.source_id=x.gdr2_id
-            where %s and duplicate=0 and astfit_params=5 and x.sep_arcsec<0.4 
-            and ks_n_detections>%i and ks_ivw_mean_mag>%0.4f and ks_ivw_mean_mag<%0.4f"""%(
-		poly_string,np.int64(config['n_detection_threshold']),
-        np.float64(config['lower_k']),np.float64(config['upper_k'])), 
-                                    **config.wsdb_kwargs))
+            with t as (select {0} from leigh_smith.virac2 as t where 
+                            duplicate=0 and astfit_params=5 
+                            and ks_n_detections>{2} and ks_ivw_mean_mag>{3} and ks_ivw_mean_mag<{4} and {5})
+                select t.*, {1}, y.j_b_ivw_mean_mag, y.h_b_ivw_mean_mag, y.ks_b_ivw_mean_mag, x.sep_arcsec,
+                g.phot_g_mean_flux_over_error, g.phot_g_mean_mag, g.phot_g_n_obs from t
+                inner join leigh_smith.virac2_photstats as y on t.sourceid=y.sourceid
+                inner join leigh_smith.virac2_x_gdr2 as x on x.virac2_id=t.sourceid
+                inner join leigh_smith.virac2_var_indices as s on s.sourceid=t.sourceid
+                inner join gaia_dr2.gaia_source as g on g.source_id=x.gdr2_id
+                where x.sep_arcsec<0.4;""".format(
+            main_string,
+            var_string,
+            np.int64(config['n_detection_threshold']),
+            np.float64(config['lower_k']),
+            np.float64(config['upper_k']),
+            poly_string), 
+        **config.wsdb_kwargs))
     
     data = pct_diff(data)
     
@@ -141,10 +179,10 @@ def gen_binned_df(df, pct=50., nbins=50, equal_counts=True):
 
 
 def downsample_training_set(data, number):
-    weight_b, bins = np.histogram(data['ks_ivw_mean_mag'].values, 
-                                 range=np.nanpercentile(data['ks_ivw_mean_mag'].values,[1.,99.]))
+    weight_b, bins = np.histogram(data['ks_b_ivw_mean_mag'].values, 
+                                 range=np.nanpercentile(data['ks_b_ivw_mean_mag'].values,[1.,99.]))
     bc = .5*(bins[1:]+bins[:-1])
-    weights = np.interp(data['ks_ivw_mean_mag'].values, bc, weight_b)
+    weights = np.interp(data['ks_b_ivw_mean_mag'].values, bc, weight_b)
     return data.iloc[np.random.choice(np.arange(len(data)), number, replace=False,
                                       p=1./weights/np.sum(1./weights))].reset_index(drop=True)
 

@@ -11,36 +11,11 @@ try:
 except:
     pass
 
-def feat_clip(df_inp, data_cols, target_cols, impute=False, qmin=0.5, qmax=99.5, return_full=False):
-    """
-    Outlier clip outside of 0.5th and 99.5th percentile
-    
-    """
-    df = df_inp.copy()
-    df[data_cols + target_cols] = df[data_cols + target_cols].replace([np.inf, -np.inf], np.nan)
-    
-    if impute:
-        for i in data_cols:
-            col_mean = np.nanmean(df[i].values)
-            df[i].fillna(col_mean, inplace=True)
-    
-    fltr = [True]*len(df)
-    for i in data_cols:
-        bot = np.nanpercentile(df[i], qmin)
-        top = np.nanpercentile(df[i], qmax)
-        fltr &= (df[i]>=bot)&(df[i]<=top)    
-    df = df[fltr].reset_index(drop=True)
-    
-    if not return_full:
-        df = df[data_cols + target_cols]
-    
-    print("{}% sources removed from clip.".format(round(len(df_inp)/len(df)-1, 4)*100))
-    return df
 
 def classif_report(y_test, y_pred, classes, plot_name):
     
     cm = confusion_matrix(y_test,y_pred)
-    cr = classification_report(y_test,y_pred)
+    cr = classification_report(y_test,y_pred,output_dict=True)
     
     if plot_name:
         cm = confusion_matrix(y_test,y_pred,normalize=True)
@@ -92,12 +67,42 @@ def plot_imp(imp_dict, plot_name):
 
 class classification(object):
     
-    def run(self, training_set, plot_name):
+    def train_feat_clip(self, df, data_cols, target_cols, impute=True, qmin=0.5, qmax=99.5):
+        """
+        Outlier clip outside of 0.5th and 99.5th percentile
+
+        """
         
-        print(training_set[[list(set(training_set.columns)-set(['class']))[0],
-                            'class']].groupby('class').agg('count'))
+        df[data_cols + target_cols] = df[data_cols + target_cols].replace([np.inf, -np.inf], np.nan)
+
+        if impute:
+            self.impute_values = {}
+            for i in data_cols:
+                self.impute_values[i] = np.nanmean(df[i].values)
+                df[i].fillna(self.impute_values[i], inplace=True)
+        else:
+            self.impute_values = None
+
+        self.upper_lower_clips = {}
+        fltr = [True]*len(df)
+        for i in data_cols:
+            bot = np.nanpercentile(df[i], qmin)
+            top = np.nanpercentile(df[i], qmax)
+            fltr &= (df[i]>=bot)&(df[i]<=top)   
+            self.upper_lower_clips[i] = [bot, top]
+            
+        print("{}% sources removed from clip.".format(round(len(df)/np.count_nonzero(fltr)-1, 4)*100))
         
-        X_train, self.y_train = training_set[self.data_cols], training_set[self.target_cols].values.ravel()
+        return df[fltr].reset_index(drop=True)
+    
+    
+    def run(self, training_set, plot_name, impute=True):
+        
+        training_set = self.train_feat_clip(training_set, self.data_cols, self.target_cols, impute)
+        
+        print(training_set[['sourceid','var_class']].groupby('var_class').agg('count'))
+        
+        X_train, y_train = training_set[self.data_cols], training_set[self.target_cols].values.ravel()
         sc = StandardScaler()
         X_train = sc.fit_transform(X_train)
         
@@ -106,20 +111,49 @@ class classification(object):
                                             max_depth=18, class_weight='balanced_subsample')
         
         split = KFold(n_splits=10, shuffle=True, random_state=42)
-        cv = cross_validate(self.model, X_train, self.y_train, cv=split, return_estimator=True)
+        cv = cross_validate(self.model, X_train, y_train, cv=split, return_estimator=True)
         
-        self.ypred = np.zeros_like(self.y_train)
+        class_, prob_ = np.zeros_like(y_train), np.zeros_like(y_train)
         split = KFold(n_splits=10, shuffle=True, random_state=42)
-        for i, (train_index, test_index) in enumerate(split.split(X_train, self.y_train)):
-            self.ypred[test_index] = cv['estimator'][i].predict(X_train[test_index])
+        for i, (train_index, test_index) in enumerate(split.split(X_train, y_train)):
+            class_[test_index] = cv['estimator'][i].predict(X_train[test_index])
+            prob = cv['estimator'][i].predict_proba(X_train[test_index])
+            class_dict = dict(zip(cv['estimator'][i].classes_, np.arange(len(cv['estimator'][i].classes_))))
+            prob_[test_index] = prob[np.arange(len(test_index)), [class_dict[clss] for clss in class_[test_index]]]
+        training_set['class'], training_set['prob'] = class_, prob_
             
-        self.cm, self.cr = classif_report(self.y_train, self.ypred, cv['estimator'][0].classes_, plot_name)
+        self.cm, self.cr = classif_report(y_train, training_set['class'], 
+                                          cv['estimator'][0].classes_, plot_name)
         
-        self.model.fit(X_train, self.y_train)
+        self.model.fit(X_train, y_train)
         self.feature_importance = {c : self.model.feature_importances_[j]
                                     for j, c in enumerate(self.data_cols)}
         if plot_name:
             plot_imp(self.feature_importance, plot_name)
+            
+        return training_set
+    
+    def predict(self, y):
+        
+        yinp = y[self.data_cols].replace([np.inf, -np.inf], np.nan)
+        
+        if self.impute_values is not None:
+            for ii in self.impute_values.keys():
+                yinp.loc[yinp[ii]!=yinp[ii],ii] = self.impute_values[ii]
+        fltr = [True] * len(yinp)
+        for ii in self.upper_lower_clips.keys():
+            fltr &= (yinp[ii]>self.upper_lower_clips[ii][0])&(yinp[ii]<self.upper_lower_clips[ii][1])
+        print('%i/%i clipped'%(np.count_nonzero(~fltr),len(y)))
+        
+        yinp = yinp[fltr].reset_index(drop=True)
+        y = y[fltr].reset_index(drop=True)
+        
+        y['class'] = self.model.predict(yinp)
+        prob = self.model.predict_proba(yinp)
+        class_dict = dict(zip(self.model.classes_, np.arange(len(self.model.classes_))))
+        y['prob'] = prob[np.arange(len(y['class'])), [class_dict[clss] for clss in y['class']]]
+    
+        return y
     
     def __init__(self):
         pass
@@ -134,11 +168,7 @@ class binary_classification(classification):
                            "ks_stetson_i","ks_stetson_j","ks_stetson_k",
                            "ks_p100_p0","ks_p99_p1","ks_p95_p5","ks_p84_p16","ks_p75_p25"]
         
-        self.target_cols = ['class']
-        
-        ## Added mean imputation - may need to be rethink for sources
-        ## with very limited data entries
-        training_set = feat_clip(training_set, self.data_cols, self.target_cols, impute=True)
+        self.target_cols = ['var_class']
         
         self.run(training_set, plot_name)
         

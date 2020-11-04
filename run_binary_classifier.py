@@ -17,15 +17,17 @@ def train_classification_region(grid, variable_stars, config, index):
                                       np.float64(config['gaia_percentile']),
                                       len(variable_stars),
                                       config)
-    gaia['class']='CONST'
+    gaia['var_class']='CONST'
     
     full_data = pd.concat([variable_stars, gaia], axis=0, sort=False)
     
     print('Running classifier for (%s, %s): %i stars'%(l,b,len(full_data)))
+    
     classifier = binary_classification(full_data)
     
-    with open(config['binary_output_dir'] + 'binary_%i%s.pkl'%(index,''+'_test'*bool(config['test'])), 'wb') as f:
+    with open(config['binary_output_dir'] + 'binary_%i%s.pkl'%(index,''+'_test'*int(config['test'])), 'wb') as f:
         pickle.dump(classifier, f)
+        
 
         
 def run_loop(lstart, lend, bstart, bend, variable_stars, config):
@@ -41,7 +43,7 @@ def run_loop(lstart, lend, bstart, bend, variable_stars, config):
                       np.ones_like(B.flatten())*sizeb]).T
     
     pd.DataFrame({'index':np.arange(len(grid)), 'l':L.flatten(),'b':B.flatten()}).to_pickle(
-        config['binary_output_dir'] + 'grid%s.pkl'%(''+'_test'*bool(config['test']))
+        config['binary_output_dir'] + 'grid%s.pkl'%(''+'_test'*int(config['test']))
     )
     
     p = Pool(32)
@@ -57,10 +59,10 @@ if __name__=="__main__":
     config.request_password()
     
     print('Loading variable stars...') 
-    variable_stars = load_all_variable_stars(config, test=bool(config['test']))
-    variable_stars['class']='VAR'
+    variable_stars = load_all_variable_stars(config)
+    variable_stars['var_class']='VAR'
     
-    if bool(config['test']):
+    if int(config['test']):
         config['sizel']=0.09
         config['sizeb']=0.09
         l, b = 0.787411, -0.054603

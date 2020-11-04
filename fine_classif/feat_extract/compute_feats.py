@@ -249,14 +249,14 @@ def source_feat_extract(data, config, ls_kwargs={}):
         per_feats = periodic_feats_force(times, mags, errors, per_dict['ls_period'], nterms, npoly)
         lag_feats = find_lag(times, period=per_dict['ls_period'])
                  
-        features = {'sourceid':sourceid,
+        features = {'sourceid':sourceid, 'error':False,
                     **per_feats, **per_dict, **nonper_feats, **lag_feats}
         
     else:
         per_feats = periodic_feats(times, mags, errors, nterms, npoly)
         lag_feats = find_lag(times, period=per_feats['lsq_period'])
         
-        features = {'sourceid':sourceid,
+        features = {'sourceid':sourceid, 'error':False,
                     **per_feats, **nonper_feats, **lag_feats}
 
     return features

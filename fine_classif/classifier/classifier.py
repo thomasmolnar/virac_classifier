@@ -1,4 +1,4 @@
-from initial_classif.classifier.classifier import classification, feat_clip
+from initial_classif.classifier.classifier import classification
 
 class variable_classification(classification):
     
@@ -15,12 +15,8 @@ class variable_classification(classification):
                            'phi1_phi2', 'phi1_phi3', 'phi2_phi3', 'a0_a1', 'a0_a2',
                            'a0_a3', 'a1_a2', 'a1_a3', 'a2_a3','JK_col','HK_col']
         
-        self.target_cols = ['class']
+        self.target_cols = ['var_class']
         
-        ## Added mean imputation - may need to be rethink for sources
-        ## with very limited data entries
-        training_set = feat_clip(training_set, self.data_cols, self.target_cols, impute=True)
-        
-        self.run(training_set, plot_name)
+        self.training_set = self.run(training_set, plot_name)
         
         

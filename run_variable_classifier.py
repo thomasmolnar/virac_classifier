@@ -31,26 +31,38 @@ def get_periodic_features(data, lightcurve_loader, config, trainset=False):
     #Extract features
     features = extract_per_feats(lc, data, ls_kwargs, config)
     
-    ### Now find the periodic features from light curves
-    ### Will need to reorder output
-    ### Add a serial/parallel version -- can run parallelfor full variable set and serial for each tile
-    
     return features
-    
+
+
+save_cols = ['sourceid','ra','dec','l','b','ks_b_ivw_mean_mag',
+             'amp_0', 'amp_1', 'amp_2', 'amp_3', 
+             'amplitude', 'beyondfrac', 'delta_loglik', 
+             'ls_period', 'lsq_period',
+             'max_pow', 'max_time_lag', 'pow_mean_disp', 'time_lag_mean',
+             'phi_0','phi_1','phi_2','phi_3','JK_col','HK_col',
+             'class','prob']
+
+save_cols_types = dict(zip(['amp_0', 'amp_1', 'amp_2', 'amp_3', 
+                 'amplitude', 'beyondfrac', 'delta_loglik', 
+                 'ls_period', 'lsq_period',
+                 'max_pow', 'max_time_lag', 'pow_mean_disp', 'time_lag_mean',
+                 'phi_0','phi_1','phi_2','phi_3','JK_col','HK_col','prob'],[np.float32]*20))
+
+
 
 if __name__=="__main__":
     
     config = configuration()
     config.request_password()
     
-    variable_stars = load_all_variable_stars(config, test=bool(config['test']))
+    variable_stars = load_all_variable_stars(config)
     constant_data = generate_gaia_training_set_random(len(variable_stars)//10, config,
                                                       np.float64(config['gaia_percentile']),
                                                       20000)
-    constant_data['class']='CONST'
+    constant_data['var_class']='CONST'
     constant_data['varcat_period'] = 1./np.float64(config['ls_min_freq'])/1.5
     
-    if bool(config['test']):
+    if int(config['test']):
         trainset = constant_data.copy()
     else:
         trainset = pd.concat([variable_stars, constant_data], axis=0, sort=False).reset_index(drop=True)
@@ -58,10 +70,14 @@ if __name__=="__main__":
     lightcurve_loader = lightcurve_loader()
     
     features = get_periodic_features(trainset, lightcurve_loader, config, trainset=True)
-    features.to_csv('tmp.csv')
+    features= features[~features['error']].reset_index(drop=True)
     
     classifier = variable_classification(features)
+        
+    classifier.training_set.astype(save_cols_types).to_pickle(
+        config['variable_output_dir'] + 'results%s.pkl'%(''+'_test'*int(config['test'])))
+    del classifier.training_set
     
     with open(config['variable_output_dir'] 
-              + 'variable%s.pkl'%(''+'_test'*bool(config['test'])), 'wb') as f:
+              + 'variable%s.pkl'%(''+'_test'*int(config['test'])), 'wb') as f:
         pickle.dump(classifier, f)
