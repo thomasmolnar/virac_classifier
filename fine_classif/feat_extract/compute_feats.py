@@ -11,8 +11,13 @@ from functools import partial
 
 from .lc_utils import *
 
+from astropy.utils.iers import IERS_A_URL, IERS_B_URL
+from astropy.utils.data import download_file
+download_file(IERS_A_URL, cache=True)
+download_file(IERS_B_URL, cache=True)
+
 # Earth coord global
-paranal = coord.EarthLocation.of_site('paranal')
+paranal = coord.EarthLocation(1946404.3,-5467644.3,-2642728.2, unit='m') #.of_site('paranal')
 
 def magarr_stats(mags):
     """

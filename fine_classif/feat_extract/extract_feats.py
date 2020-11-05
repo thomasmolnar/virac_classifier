@@ -16,9 +16,9 @@ def calc_excess_colour(glon, glat, config, jk=False, hk=False):
     pathtofile = str(config['path_extinction_map'])
     
     if jk:
-        extM = extinction_map_healpix(pathtofile, version='v2_NEW_JK_PHOTSTATS')
+        extM = extinction_map_healpix(pathtofile, version='v2_NEW_JK_PHOTSTATS_FULL')
     elif hk:
-        extM = extinction_map_healpix(pathtofile, version='v2_NEW_HK_PHOTSTATS')
+        extM = extinction_map_healpix(pathtofile, version='v2_NEW_HK_PHOTSTATS_FULL')
         
     col_excess = extM.query(glon,glat)
     

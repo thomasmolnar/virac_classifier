@@ -3,7 +3,7 @@ import pandas as pd
 
 from sklearn.model_selection import cross_validate
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import RobustScaler
 from sklearn.model_selection import KFold
 from sklearn.metrics import confusion_matrix, classification_report
 try:
@@ -67,51 +67,56 @@ def plot_imp(imp_dict, plot_name):
 
 class classification(object):
     
-    def train_feat_clip(self, df, data_cols, target_cols, impute=True, qmin=0.5, qmax=99.5):
+    def train_feat_clip(self, df, impute=True, Nsigma=5):
         """
-        Outlier clip outside of 0.5th and 99.5th percentile
+        Outlier clip outside of 5 sigma (computed from percentiles)
 
         """
         
-        df[data_cols + target_cols] = df[data_cols + target_cols].replace([np.inf, -np.inf], np.nan)
+        df[self.data_cols + self.target_cols] = df[self.data_cols + self.target_cols].replace([np.inf, -np.inf], np.nan)
+        with np.errstate(invalid='ignore'):
+            df[self.log_transform_cols] = np.log(df[self.log_transform_cols])
+        
+        self.upper_lower_clips = {}
+        fltr = [True]*len(df)
 
+        for i in self.data_cols:
+            eff_sigma = .25*np.diff(np.nanpercentile(df[i], [5., 95.]))[0]
+            eff_median = np.nanpercentile(df[i], 50.)
+            bot, top = eff_median-Nsigma*eff_sigma, eff_median+Nsigma*eff_sigma
+            fltr &= ~((df[i]<bot)|(df[i]>top))   
+            self.upper_lower_clips[i] = [bot, top]
+            
         if impute:
             self.impute_values = {}
-            for i in data_cols:
-                self.impute_values[i] = np.nanmean(df[i].values)
+            for i in self.data_cols:
+                self.impute_values[i] = np.nanmedian(df[i].values)
                 df[i].fillna(self.impute_values[i], inplace=True)
         else:
             self.impute_values = None
-
-        self.upper_lower_clips = {}
-        fltr = [True]*len(df)
-        for i in data_cols:
-            bot = np.nanpercentile(df[i], qmin)
-            top = np.nanpercentile(df[i], qmax)
-            fltr &= (df[i]>=bot)&(df[i]<=top)   
-            self.upper_lower_clips[i] = [bot, top]
             
         print("{}% sources removed from clip.".format(round(len(df)/np.count_nonzero(fltr)-1, 4)*100))
         
         return df[fltr].reset_index(drop=True)
     
     
-    def run(self, training_set, plot_name, impute=True):
+    def run(self, training_set, plot_name, nthreads, impute=True):
         
-        training_set = self.train_feat_clip(training_set, self.data_cols, self.target_cols, impute)
+        training_set = self.train_feat_clip(training_set, impute)
         
         print(training_set[['sourceid','var_class']].groupby('var_class').agg('count'))
         
         X_train, y_train = training_set[self.data_cols], training_set[self.target_cols].values.ravel()
-        sc = StandardScaler()
-        X_train = sc.fit_transform(X_train)
+        self.sc = RobustScaler()
+        X_train = self.sc.fit_transform(X_train)
         
         self.model = RandomForestClassifier(n_estimators=1000, min_samples_split=5, 
                                             min_samples_leaf=5, max_features='sqrt',
                                             max_depth=18, class_weight='balanced_subsample')
         
         split = KFold(n_splits=10, shuffle=True, random_state=42)
-        cv = cross_validate(self.model, X_train, y_train, cv=split, return_estimator=True)
+        cv = cross_validate(self.model, X_train, y_train, cv=split, return_estimator=True,
+                            n_jobs=nthreads)
         
         class_, prob_ = np.zeros_like(y_train), np.zeros_like(y_train)
         split = KFold(n_splits=10, shuffle=True, random_state=42)
@@ -136,16 +141,20 @@ class classification(object):
     def predict(self, y):
         
         yinp = y[self.data_cols].replace([np.inf, -np.inf], np.nan)
+        with np.errstate(invalid='ignore'):
+            yinp[self.log_transform_cols] = np.log(yinp[self.log_transform_cols])
+        
+        fltr = [True] * len(yinp)
+        for ii in self.upper_lower_clips.keys():
+            fltr &= ~((yinp[ii]<self.upper_lower_clips[ii][0])|(yinp[ii]>self.upper_lower_clips[ii][1]))
         
         if self.impute_values is not None:
             for ii in self.impute_values.keys():
                 yinp.loc[yinp[ii]!=yinp[ii],ii] = self.impute_values[ii]
-        fltr = [True] * len(yinp)
-        for ii in self.upper_lower_clips.keys():
-            fltr &= (yinp[ii]>self.upper_lower_clips[ii][0])&(yinp[ii]<self.upper_lower_clips[ii][1])
+                
         print('%i/%i clipped'%(np.count_nonzero(~fltr),len(y)))
         
-        yinp = yinp[fltr].reset_index(drop=True)
+        yinp = self.sc.transform(yinp[fltr].reset_index(drop=True))
         y = y[fltr].reset_index(drop=True)
         
         y['class'] = self.model.predict(yinp)
@@ -170,6 +179,8 @@ class binary_classification(classification):
         
         self.target_cols = ['var_class']
         
-        self.run(training_set, plot_name)
+        self.log_transform_cols = self.data_cols
+        
+        self.run(training_set, plot_name, nthreads=1)
         
         

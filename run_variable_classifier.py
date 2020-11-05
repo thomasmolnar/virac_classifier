@@ -72,7 +72,7 @@ if __name__=="__main__":
     features = get_periodic_features(trainset, lightcurve_loader, config, trainset=True)
     features= features[~features['error']].reset_index(drop=True)
     
-    classifier = variable_classification(features)
+    classifier = variable_classification(features, config)
         
     classifier.training_set.astype(save_cols_types).to_pickle(
         config['variable_output_dir'] + 'results%s.pkl'%(''+'_test'*int(config['test'])))
