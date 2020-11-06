@@ -104,6 +104,7 @@ def periodic_feats_force(times, mags, errors, period, nterms=4, npoly=1):
     f0 = 1. / (4*period)
     f1 = 1. / (period)
     Nf = 10
+
         
     results = fourier_poly_chi2_fit_full(times=times,
                                          mag=mags,
@@ -173,7 +174,7 @@ def correct_to_HJD(data, ra, dec):
     data['HJD'] = data['mjdobs'] + 2400000.5 + times.light_travel_time(
         coordinate).to(u.day).value
 
-def quality_cut(data, chicut=5., ast_cut=11.829, amb_corr=True):
+def quality_cut(data, chicut=5., ast_cut=11.829, amb_corr=1):
     """
     Photometry/Astrometric quality cuts
     
@@ -188,7 +189,7 @@ def quality_cut(data, chicut=5., ast_cut=11.829, amb_corr=True):
                 (data['mag'] < maglimit))].reset_index(drop=True)
     data = data[~(data['ast_res_chisq']>ast_cut)].reset_index(drop=True)
     
-    if amb_corr=='True':
+    if amb_corr:
         data = data[~(data['ambiguous_match'])].reset_index(drop=True)
     
     return data
@@ -229,7 +230,7 @@ def source_feat_extract(data, config, ls_kwargs={}):
     
     # Pre-process light curve data with quality cuts and 3 sigma conservative cut 
     chi_cut, ast_cut = float(config['chi_cut']), float(config['ast_cut'])
-    amb_corr = config['amb_correction']
+    amb_corr = int(config['amb_correction'])
     sig_thresh = float(config['sig_thresh'])
     lc_clean = sigclipper(quality_cut(lc, chi_cut, ast_cut, amb_corr), sig_thresh)
     
@@ -247,21 +248,19 @@ def source_feat_extract(data, config, ls_kwargs={}):
     nonper_feats = magarr_stats(mags)    
                  
     # Division into forced frequency grid input or not for lsq comp.
-    # Through testing the 'unforced' method takes the same amount of time and hence
-    # is to be used, as will provide a more accurate period for asymmetrical light curves
-    if config['force_method']=='True':
+    if int(config['force_method']):
         per_dict = lombscargle_stats(times, mags, errors, **ls_kwargs)
         per_feats = periodic_feats_force(times, mags, errors, per_dict['ls_period'], nterms, npoly)
         lag_feats = find_lag(times, period=per_dict['ls_period'])
                  
-        features = {'sourceid':sourceid, 'error':False,
+        features = {'sourceid':sourceid,
                     **per_feats, **per_dict, **nonper_feats, **lag_feats}
         
     else:
         per_feats = periodic_feats(times, mags, errors, nterms, npoly)
         lag_feats = find_lag(times, period=per_feats['lsq_period'])
         
-        features = {'sourceid':sourceid, 'error':False,
+        features = {'sourceid':sourceid,
                     **per_feats, **nonper_feats, **lag_feats}
 
     return features

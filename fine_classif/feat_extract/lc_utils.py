@@ -819,8 +819,6 @@ def lombscargle_stats(times, mags, errors, **ls_kwargs):
         
     freq, power = model.autopower(**ls_kwargs)
     
-    #print("LS method: max_freq={}, min_freq={} -- with Nf={}".format(freq.max(), freq.min(), freq.size))
-    
     # Find max power and hence most likely period
     max_pow = power.max()
     max_pow_arg = np.argmax(power)

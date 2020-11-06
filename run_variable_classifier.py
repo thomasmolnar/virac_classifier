@@ -9,25 +9,17 @@ from fine_classif.classifier.classifier import variable_classification
 from fine_classif.feat_extract.extract_feats import extract_per_feats
 
 
-def get_periodic_features(data, lightcurve_loader, config, trainset=False):
+def get_periodic_features(data, lightcurve_loader, config):
     """
     Periodic feature extracter - to be used for variable classification
     """
     
-    print("loading lightcurves..")
     # Load variable light curves in pd format
     lc = lightcurve_loader.split_lcs(data)
-    print("loaded {} light curves".format(len(lc)))
     
-    #general LombScargle frequency grid conditions 
-    if trainset:
-        ls_kwargs = {'maximum_frequency': np.float64(config['ls_max_freq']),
-                     'minimum_frequency':1./(1.5*np.nanmax(data['varcat_period'].values))}
-    else:
-        ls_kwargs = {'maximum_frequency': np.float64(config['ls_max_freq']),
-                     'minimum_frequency':np.float64(config['ls_min_freq'])}
+    # Universal frequency grid conditions 
+    ls_kwargs = {'maximum_frequency': np.float64(config['ls_max_freq'])}
         
-    print("loading features..")
     #Extract features
     features = extract_per_feats(lc, data, ls_kwargs, config)
     
