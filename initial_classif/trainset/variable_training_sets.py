@@ -9,7 +9,8 @@ def load_all_variable_stars(config):
     
     test_string = ''
     if int(config['test']):
-        test_string = 'limit 2000'
+        config.wsdb_kwargs['preamb']+='select setseed(0.5);'
+        test_string = 'order by random() limit 20000'
     
 #     dsets = pd.DataFrame(
 #             sqlutil.get("""select {0}, v.cat_period, v.var_class, 

@@ -10,6 +10,8 @@ try:
     from sklearn.metrics import ConfusionMatrixDisplay
 except:
     pass
+import xgboost
+import lightgbm
 
 
 def classif_report(y_test, y_pred, classes, plot_name):
@@ -100,7 +102,7 @@ class classification(object):
         return df[fltr].reset_index(drop=True)
     
     
-    def run(self, training_set, plot_name, nthreads, impute=True):
+    def run(self, training_set, plot_name, nthreads, impute=True, xgb=True, cross_val=True):
         
         training_set = self.train_feat_clip(training_set, impute)
         
@@ -110,26 +112,45 @@ class classification(object):
         self.sc = RobustScaler()
         X_train = self.sc.fit_transform(X_train)
         
-        self.model = RandomForestClassifier(n_estimators=1000, min_samples_split=5, 
-                                            min_samples_leaf=5, max_features='sqrt',
-                                            max_depth=18, class_weight='balanced_subsample')
+        if xgb:
+#             self.model = lightgbm.LGBMClassifier(n_estimators=100, max_depth=8, learning_rate=0.15)
+            self.model = xgboost.XGBClassifier(n_estimators=100,
+                                               max_depth=8,
+                                               learning_rate=0.15,
+                                               min_child_weight=3, #5,
+                                               gamma=2.,
+                                               colsample_bytree=0.9,
+                                               subsample=0.8,
+                                               tree_method='hist', n_jobs=1)
+        else:
+            self.model = RandomForestClassifier(n_estimators=100, min_samples_split=5, 
+                                                min_samples_leaf=5, max_features='sqrt',
+                                                max_depth=8, class_weight='balanced_subsample')
         
-        split = KFold(n_splits=10, shuffle=True, random_state=42)
-        cv = cross_validate(self.model, X_train, y_train, cv=split, return_estimator=True,
-                            n_jobs=nthreads)
-        
-        class_, prob_ = np.zeros_like(y_train), np.zeros_like(y_train)
-        split = KFold(n_splits=10, shuffle=True, random_state=42)
-        for i, (train_index, test_index) in enumerate(split.split(X_train, y_train)):
-            class_[test_index] = cv['estimator'][i].predict(X_train[test_index])
-            prob = cv['estimator'][i].predict_proba(X_train[test_index])
-            class_dict = dict(zip(cv['estimator'][i].classes_, np.arange(len(cv['estimator'][i].classes_))))
-            prob_[test_index] = prob[np.arange(len(test_index)), [class_dict[clss] for clss in class_[test_index]]]
-        training_set['class'], training_set['prob'] = class_, prob_
-            
-        self.cm, self.cr = classif_report(y_train, training_set['class'], 
-                                          cv['estimator'][0].classes_, plot_name)
-        
+        if cross_val:
+            split = KFold(n_splits=10, shuffle=True, random_state=42)
+            cv = cross_validate(self.model, X_train, y_train, cv=split, return_estimator=True,
+                                n_jobs=nthreads)
+
+            class_, prob_, prob_const_ = np.zeros_like(y_train), np.zeros_like(y_train), np.zeros_like(y_train)
+            split = KFold(n_splits=10, shuffle=True, random_state=42)
+            for i, (train_index, test_index) in enumerate(split.split(X_train, y_train)):
+                class_[test_index] = cv['estimator'][i].predict(X_train[test_index])
+                prob = cv['estimator'][i].predict_proba(X_train[test_index])
+                class_dict = dict(zip(cv['estimator'][i].classes_, np.arange(len(cv['estimator'][i].classes_))))
+                prob_[test_index] = prob[np.arange(len(test_index)), [class_dict[clss] for clss in class_[test_index]]]
+                prob_const_[test_index] = prob[:, class_dict['CONST']]
+            training_set['class'], training_set['prob'], training_set['prob_var'] = class_, prob_, 1-prob_const_
+
+            self.cm, self.cr = classif_report(y_train, training_set['class'], 
+                                              cv['estimator'][0].classes_, plot_name)
+    #         print(self.cr['VAR']['f1-score'])
+
+    #         for ss in list(set(np.unique(training_set['detailed_var_class']))-set(['CONST'])):
+    #             print(ss,np.count_nonzero((training_set['class']=='CONST')&
+    #                                       (training_set['detailed_var_class']==ss))/
+    #                       np.count_nonzero((training_set['detailed_var_class']==ss)))
+
         self.model.fit(X_train, y_train)
         self.feature_importance = {c : self.model.feature_importances_[j]
                                     for j, c in enumerate(self.data_cols)}
@@ -181,6 +202,6 @@ class binary_classification(classification):
         
         self.log_transform_cols = self.data_cols
         
-        self.run(training_set, plot_name, nthreads=1)
+        self.training_set=self.run(training_set, plot_name, nthreads=1)
         
         

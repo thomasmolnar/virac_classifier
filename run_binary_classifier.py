@@ -17,6 +17,7 @@ def train_classification_region(grid, variable_stars, config, index):
                                       np.float64(config['gaia_percentile']),
                                       len(variable_stars),
                                       config)
+    gaia['detailed_var_class']='CONST'
     gaia['var_class']='CONST'
     
     full_data = pd.concat([variable_stars, gaia], axis=0, sort=False)
@@ -60,11 +61,12 @@ if __name__=="__main__":
     
     print('Loading variable stars...') 
     variable_stars = load_all_variable_stars(config)
+    variable_stars['detailed_var_class']=variable_stars['var_class'].copy()
     variable_stars['var_class']='VAR'
     
     if int(config['test']):
-        config['sizel']=0.09
-        config['sizeb']=0.09
+        config['sizel']=0.6
+        config['sizeb']=0.6
         l, b = 0.787411, -0.054603
         run_loop(l - .5 * np.float64(config['sizel']), 
                  l + 1.01 * .5 * np.float64(config['sizel']), 
@@ -73,3 +75,5 @@ if __name__=="__main__":
                  variable_stars, config)
     else:
         run_loop(-10,10.1,-10,10.1, variable_stars, config)
+#         run_loop(-10,-10.+np.float64(config['sizel'])+0.1,
+#                  -10,-10.+np.float64(config['sizeb'])+0.1, variable_stars, config)
