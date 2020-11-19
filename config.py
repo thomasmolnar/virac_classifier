@@ -1,10 +1,13 @@
+import os
 import configparser
 import getpass
+
+thispath=os.path.dirname(os.path.abspath(__file__))+'/'
 
 class configuration(object):
     def __init__(self):
         self.config_ = configparser.ConfigParser()
-        self.config_.read_file(open('config.cfg'))
+        self.config_.read_file(open(thispath+'config.cfg'))
         self.wsdb_kwargs = dict(self.config_['wsdb'])
         self.wsdb_kwargs.update({
             'asDict':True,

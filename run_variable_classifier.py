@@ -9,7 +9,7 @@ from fine_classif.classifier.classifier import variable_classification
 from fine_classif.feat_extract.extract_feats import extract_per_feats
 
 
-def get_periodic_features(data, lightcurve_loader, config):
+def get_periodic_features(data, lightcurve_loader, config, serial=True):
     """
     Periodic feature extracter - to be used for variable classification
     """
@@ -21,7 +21,7 @@ def get_periodic_features(data, lightcurve_loader, config):
     ls_kwargs = {'maximum_frequency': np.float64(config['ls_max_freq'])}
         
     #Extract features
-    features = extract_per_feats(lc, data, ls_kwargs, config)
+    features = extract_per_feats(lc, data, ls_kwargs, config, serial=serial)
     
     return features
 
@@ -40,28 +40,30 @@ save_cols_types = dict(zip(['amp_0', 'amp_1', 'amp_2', 'amp_3',
                  'max_pow', 'max_time_lag', 'pow_mean_disp', 'time_lag_mean',
                  'phi_0','phi_1','phi_2','phi_3','JK_col','HK_col','prob'],[np.float32]*20))
 
-
+def generate_secondstage_training(config):
+    variable_stars = load_all_variable_stars(config)
+    constant_data = generate_gaia_training_set_random(len(variable_stars)//10, config,
+                                                      np.float64(config['gaia_percentile']),
+                                                      20000)
+    constant_data['var_class']='CONST'
+    
+    if int(config['test']):
+        trainset = constant_data.copy()
+    else:
+        trainset = pd.concat([variable_stars, constant_data], axis=0, sort=False).reset_index(drop=True)
+        
+    return trainset
 
 if __name__=="__main__":
     
     config = configuration()
     config.request_password()
     
-    variable_stars = load_all_variable_stars(config)
-    constant_data = generate_gaia_training_set_random(len(variable_stars)//10, config,
-                                                      np.float64(config['gaia_percentile']),
-                                                      20000)
-    constant_data['var_class']='CONST'
-    constant_data['varcat_period'] = 1./np.float64(config['ls_min_freq'])/1.5
-    
-    if int(config['test']):
-        trainset = constant_data.copy()
-    else:
-        trainset = pd.concat([variable_stars, constant_data], axis=0, sort=False).reset_index(drop=True)
+    trainset = generate_secondstage_training(config)
     
     lightcurve_loader = lightcurve_loader()
     
-    features = get_periodic_features(trainset, lightcurve_loader, config, trainset=True)
+    features = get_periodic_features(trainset, lightcurve_loader, config, serial=False)
     features= features[~features['error']].reset_index(drop=True)
     
     classifier = variable_classification(features, config)

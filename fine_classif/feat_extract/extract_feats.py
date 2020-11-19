@@ -103,18 +103,19 @@ def finalise_feats(features_df, input_df, config):
     return df_match
     
 
-def extract_per_feats(lc_dfs, input_df, ls_kwargs, config):
+def extract_per_feats(lc_dfs, input_df, ls_kwargs, config, serial=True):
     """
     Wrapper for periodic feature extraction based on list of light curves
     in panda format
     
     """
-    p = Pool(int(config['var_cores']))
-    features = p.map(partial(source_feat_extract, ls_kwargs=ls_kwargs, config=config),
-          lc_dfs)
-    p.close()
-    p.join()
-
+    if serial:
+        features = [source_feat_extract(lc, ls_kwargs=ls_kwargs, config=config) for lc in lc_dfs]
+    else:
+        with Pool(int(config['var_cores'])) as p:
+            features = p.map(partial(source_feat_extract, ls_kwargs=ls_kwargs, config=config),
+                              lc_dfs)
+    
     feature_df = pd.DataFrame.from_dict(features)
 
     final_feature_df = finalise_feats(feature_df, input_df, config)

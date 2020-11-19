@@ -4,8 +4,10 @@ import pandas as pd
 from sklearn.model_selection import cross_validate
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import RobustScaler
+from sklearn.impute import KNNImputer
 from sklearn.model_selection import KFold
 from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.preprocessing import PowerTransformer
 try:
     from sklearn.metrics import ConfusionMatrixDisplay
 except:
@@ -69,15 +71,20 @@ def plot_imp(imp_dict, plot_name):
 
 class classification(object):
     
-    def train_feat_clip(self, df, impute=True, Nsigma=5):
+    def train_feat_clip(self, df, impute=True, Nsigma=10):
         """
-        Outlier clip outside of 5 sigma (computed from percentiles)
+        Outlier clip outside of 10 sigma (computed from percentiles)
 
         """
         
+#         with np.errstate(invalid='ignore'):
+#             df[self.log_transform_cols] = np.log(df[self.log_transform_cols])
+            
         df[self.data_cols + self.target_cols] = df[self.data_cols + self.target_cols].replace([np.inf, -np.inf], np.nan)
+        
+        self.ptransformer = PowerTransformer()
         with np.errstate(invalid='ignore'):
-            df[self.log_transform_cols] = np.log(df[self.log_transform_cols])
+            df[self.log_transform_cols] = self.ptransformer.fit_transform(df[self.log_transform_cols])
         
         self.upper_lower_clips = {}
         fltr = [True]*len(df)
@@ -90,12 +97,15 @@ class classification(object):
             self.upper_lower_clips[i] = [bot, top]
             
         if impute:
-            self.impute_values = {}
-            for i in self.data_cols:
-                self.impute_values[i] = np.nanmedian(df[i].values)
-                df[i].fillna(self.impute_values[i], inplace=True)
+            self.imputer = KNNImputer(n_neighbors=5)
+            df[self.data_cols] = self.imputer.fit_transform(df[self.data_cols].values)
+#             self.impute_values = {}
+#             for i in self.data_cols:
+#                 self.impute_values[i] = np.nanmedian(df[i].values)
+#                 df[i].fillna(self.impute_values[i], inplace=True)
         else:
-            self.impute_values = None
+            self.imputer = None
+#             self.impute_values = None
             
         print("{}% sources removed from clip.".format(round(len(df)/np.count_nonzero(fltr)-1, 4)*100))
         
@@ -161,17 +171,20 @@ class classification(object):
     
     def predict(self, y):
         
+        yinp = y.copy()
         yinp = y[self.data_cols].replace([np.inf, -np.inf], np.nan)
         with np.errstate(invalid='ignore'):
-            yinp[self.log_transform_cols] = np.log(yinp[self.log_transform_cols])
+            yinp[self.log_transform_cols] = self.ptransformer.transform(yinp[self.log_transform_cols])
         
         fltr = [True] * len(yinp)
         for ii in self.upper_lower_clips.keys():
             fltr &= ~((yinp[ii]<self.upper_lower_clips[ii][0])|(yinp[ii]>self.upper_lower_clips[ii][1]))
         
-        if self.impute_values is not None:
-            for ii in self.impute_values.keys():
-                yinp.loc[yinp[ii]!=yinp[ii],ii] = self.impute_values[ii]
+#         if self.impute_values is not None:
+#             for ii in self.impute_values.keys():
+#                 yinp.loc[yinp[ii]!=yinp[ii],ii] = self.impute_values[ii]
+        if self.imputer is not None:
+            yinp[self.data_cols] = self.imputer.transform(yinp[self.data_cols].values)
                 
         print('%i/%i clipped'%(np.count_nonzero(~fltr),len(y)))
         
@@ -196,7 +209,11 @@ class binary_classification(classification):
         self.data_cols = ["ks_stdev","ks_mad","ks_kurtosis","ks_skew",
                            "ks_eta",#"ks_eta_e",
                            "ks_stetson_i","ks_stetson_j","ks_stetson_k",
-                           "ks_p100_p0","ks_p99_p1","ks_p95_p5","ks_p84_p16","ks_p75_p25"]
+                           "ks_p100_p0","ks_p99_p1","ks_p95_p5","ks_p84_p16","ks_p75_p25",
+                           "ks_stdev_over_error","ks_mad_over_error",
+                           "ks_p100_p0_over_error","ks_p99_p1_over_error",
+                           "ks_p95_p5_over_error","ks_p84_p16_over_error","ks_p75_p25_over_error"
+                         ]
         
         self.target_cols = ['var_class']
         

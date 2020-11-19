@@ -117,7 +117,8 @@ def periodic_feats_force(times, mags, errors, period, nterms=4, npoly=1):
                                          regularization=0.1,
                                          keep_small=True, 
                                          code_switch=True,
-                                         use_power_of_2=True, force=True)
+                                         use_power_of_2=True, force=True, 
+                                         use_nfft=False)
     
     # Calculate delta log likelihood between periodic and constant Gaussian scatter models
     pred_mean = retrieve_fourier_poly(times=times, results=results)
@@ -154,7 +155,7 @@ def find_lag(times, period):
     # Dispersion of max
     mean_disp = np.abs(t_max-mean)/sd
     
-    return {'time_lag_mean':mean_disp, 'max_time_lag':t_max}
+    return {'time_lag_mean':mean_disp, 'max_time_lag':t_max, 'error':False}
 
 
 def correct_to_HJD(data, ra, dec):
@@ -253,14 +254,14 @@ def source_feat_extract(data, config, ls_kwargs={}):
         per_feats = periodic_feats_force(times, mags, errors, per_dict['ls_period'], nterms, npoly)
         lag_feats = find_lag(times, period=per_dict['ls_period'])
                  
-        features = {'sourceid':sourceid,
+        features = {'sourceid':sourceid, 
                     **per_feats, **per_dict, **nonper_feats, **lag_feats}
         
     else:
         per_feats = periodic_feats(times, mags, errors, nterms, npoly)
         lag_feats = find_lag(times, period=per_feats['lsq_period'])
         
-        features = {'sourceid':sourceid,
+        features = {'sourceid':sourceid, 
                     **per_feats, **nonper_feats, **lag_feats}
 
     return features

@@ -4,8 +4,9 @@ import h5py
 from healpy import ring2nest
 import pandas as pd
 from astropy.coordinates import SkyCoord
-from astropy.table import Table, vstack
+from astropy.table import Table, vstack, hstack
 from astropy_healpix import healpix_to_lonlat, level_ipix_to_uniq, nside_to_level
+from interface_utils.add_stats import main_table_cols, phot_stats, var_indices, pct_diff, error_ratios
 
 
 MAXNSIDE=1024
@@ -53,36 +54,8 @@ class lightcurve_loader(object):
         
         self.healpix_grid.sort_values(by='index', inplace=True)
         self.healpix_grid.reset_index(drop=True,inplace=True)
-        
-        
-    def __call__(self, sourceid_input):
-        """
-            sourceid: an array of VIRAC source ids
-            
-            returns an astropy Table containing light curves for all sources (not necessarily
-            in the same order as the input sourceid list)
-            
-            We first find the healpix the sources are in and then split into groups based on this.
-            For each group, we load the appropriate light curves for the sourceids in each data file
-            and complement with MJD and filter information. We then convert to pandas DataFrame and
-            concat the final set of data frames from each file.
-        """
-        
-        sourceid = np.unique(np.atleast_1d(sourceid_input))
-        
-        # Find healpix of source
-        r_index = np.searchsorted(self.healpix_grid['index'], 
-                                  ring2nest(MAXNSIDE,np.int64(sourceid/1000000)), 
-                                  side='right') - 1
-        indices = self.healpix_grid['hpx'].values[r_index]
-        nside = self.healpix_grid['nside'].values[r_index]
-        
-        # Group sources based on file
-        sorted_ = np.argsort(indices)
-        uniq_files, uniq_indx = np.unique(indices[sorted_],return_index=True)
-        uniq_bunches = np.split(sourceid[sorted_], uniq_indx[1:])
-        
-        def get_data_per_file(hpx, ns, sources):
+    
+    def get_lcdata_per_file(self, hpx, ns, sources):
             if not os.path.isfile(file_path + 'n%i_%i.hdf5' % (ns, hpx)):
                 return Table([])
             with h5py.File(file_path + 'n%i_%i.hdf5' % (ns, hpx), "r") as f:
@@ -125,10 +98,68 @@ class lightcurve_loader(object):
                 df = df[df['filter']=='Ks']
                 del df['filter']
                 
-                return df        
+            return df   
+            
+    def get_data_table_per_file(self, hpx, ns, config):
         
+            if not os.path.isfile(file_path + 'n%i_%i.hdf5' % (ns, hpx)):
+                return Table([])
+            
+            with h5py.File(file_path + 'n%i_%i.hdf5' % (ns, hpx), "r") as f:
+        
+                sl_has_var_idx = f["sourceList/has_variabilityIndices"][:]
+                assert np.all((f["sourceList/sourceid"][sl_has_var_idx] - 
+                               f["variabilityIndices/sourceid"][:])==0)
+                
+                with np.errstate(invalid='ignore'):
+                    fltr = (f["sourceList/ks_b_ivw_mean_mag"][sl_has_var_idx]
+                                >np.float64(config['lower_k']))
+                    fltr &= (f["sourceList/ks_b_ivw_mean_mag"][sl_has_var_idx]
+                             <np.float64(config['upper_k']))
+                fltr &= (f["sourceList/ks_n_detections"][sl_has_var_idx]
+                             >np.int64(config['n_detection_threshold']))
+                fltr &= (f["sourceList/astfit_params"][sl_has_var_idx]==5)
+                fltr &= (f["sourceList/duplicate"][sl_has_var_idx]==0)
+                
+                cols = main_table_cols + phot_stats
+                data = pd.DataFrame()
+                for c in cols:
+                    data[c] = f["sourceList"][c][sl_has_var_idx][fltr] 
+                for c in var_indices:
+                    data[c] = f["variabilityIndices"][c][fltr] 
+            
+            return error_ratios(pct_diff(data))
+    
+        
+    def __call__(self, sourceid_input):
+        """
+            sourceid: an array of VIRAC source ids
+            
+            returns an astropy Table containing light curves for all sources (not necessarily
+            in the same order as the input sourceid list)
+            
+            We first find the healpix the sources are in and then split into groups based on this.
+            For each group, we load the appropriate light curves for the sourceids in each data file
+            and complement with MJD and filter information. We then convert to pandas DataFrame and
+            concat the final set of data frames from each file.
+        """
+        
+        sourceid = np.unique(np.atleast_1d(sourceid_input))
+        
+        # Find healpix of source
+        r_index = np.searchsorted(self.healpix_grid['index'], 
+                                  ring2nest(MAXNSIDE,np.int64(sourceid/1000000)), 
+                                  side='right') - 1
+        indices = self.healpix_grid['hpx'].values[r_index]
+        nside = self.healpix_grid['nside'].values[r_index]
+        
+        # Group sources based on file
+        sorted_ = np.argsort(indices)
+        uniq_files, uniq_indx = np.unique(indices[sorted_],return_index=True)
+        uniq_bunches = np.split(sourceid[sorted_], uniq_indx[1:])
+    
         # Loop through files
-        df = vstack([get_data_per_file(hpx,ns,sources) for hpx, ns, sources 
+        df = vstack([self.get_lcdata_per_file(hpx,ns,sources) for hpx, ns, sources 
                      in zip(uniq_files, nside[sorted_][uniq_indx], uniq_bunches)])
         if len(df):
             df.rename_columns(["hfad_mag", "hfad_emag"],["mag","error"])

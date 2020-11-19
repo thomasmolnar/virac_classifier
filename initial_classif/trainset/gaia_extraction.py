@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 from sqlutilpy import *
-from interface_utils.add_stats import pct_diff, main_string, var_string
+from interface_utils.add_stats import pct_diff, main_string, var_string, phot_string, error_ratios
 
 ### Code for the automatic extraction of constant stellar sources, based on population statistics of a predetermined variability measure in Gaia.
 ### WSDB Gaia DR2 (gaia_dr2.gaia_source) table specifications are used.
@@ -17,7 +17,7 @@ def grab_virac_gaia_random_sample(random_index_max,config):
                 with t as (select {0} from leigh_smith.virac2 as t where 
                             duplicate=0 and astfit_params=5 
                             and ks_n_detections>{2} and ks_ivw_mean_mag>{3} and ks_ivw_mean_mag<{4} {5})
-                select t.*, {1}, y.j_b_ivw_mean_mag, y.h_b_ivw_mean_mag, y.ks_b_ivw_mean_mag, x.sep_arcsec,
+                select t.*, {1}, {6}, x.sep_arcsec,
                 g.phot_g_mean_flux_over_error, g.phot_g_mean_mag, g.phot_g_n_obs from t
                 inner join leigh_smith.virac2_photstats as y on t.sourceid=y.sourceid
                 inner join leigh_smith.virac2_x_gdr2 as x on x.virac2_id=t.sourceid
@@ -29,7 +29,8 @@ def grab_virac_gaia_random_sample(random_index_max,config):
                 np.int64(config['n_detection_threshold']),
                 np.float64(config['lower_k']),
                 np.float64(config['upper_k']),
-                test_string), 
+                test_string, 
+                phot_string), 
             **config.wsdb_kwargs))
     else:
         test_string = "random_index<%i" % random_index_max
@@ -48,7 +49,7 @@ def grab_virac_gaia_random_sample(random_index_max,config):
                         select phot_g_mean_flux_over_error, phot_g_mean_mag, phot_g_n_obs, virac2_id, sep_arcsec from p
                         inner join leigh_smith.virac2_x_gdr2 as x on x.gdr2_id=source_id where x.sep_arcsec<0.4
                         )
-                select t.*, {1}, y.j_b_ivw_mean_mag, y.h_b_ivw_mean_mag, y.ks_b_ivw_mean_mag, 
+                select t.*, {1}, {6},  
                 g.phot_g_mean_flux_over_error, g.phot_g_mean_mag, g.phot_g_n_obs, g.sep_arcsec from g
                 inner join leigh_smith.virac2 as t on t.sourceid=g.virac2_id
                 inner join leigh_smith.virac2_photstats as y on y.sourceid=g.virac2_id
@@ -58,10 +59,14 @@ def grab_virac_gaia_random_sample(random_index_max,config):
                 np.int64(config['n_detection_threshold']),
                 np.float64(config['lower_k']),
                 np.float64(config['upper_k']),
-                test_string), 
+                test_string,
+                phot_string), 
             **config.wsdb_kwargs))
+        
+    data = data[data['ks_b_ivw_mean_mag']>0.].reset_index(drop=True)
     
     data = pct_diff(data)
+    data = error_ratios(data)
     
     data = data.sort_values(by='sep_arcsec').drop_duplicates(subset=['sourceid']).reset_index(drop=True)
     
@@ -86,7 +91,7 @@ def grab_virac_gaia_region_with_stats(l,b,sizel,sizeb,config):
             with t as (select {0} from leigh_smith.virac2 as t where 
                             duplicate=0 and astfit_params=5 
                             and ks_n_detections>{2} and ks_ivw_mean_mag>{3} and ks_ivw_mean_mag<{4} and {5})
-                select t.*, {1}, y.j_b_ivw_mean_mag, y.h_b_ivw_mean_mag, y.ks_b_ivw_mean_mag, x.sep_arcsec,
+                select t.*, {1}, {6}, x.sep_arcsec,
                 g.phot_g_mean_flux_over_error, g.phot_g_mean_mag, g.phot_g_n_obs from t
                 inner join leigh_smith.virac2_photstats as y on t.sourceid=y.sourceid
                 inner join leigh_smith.virac2_x_gdr2 as x on x.virac2_id=t.sourceid
@@ -98,10 +103,14 @@ def grab_virac_gaia_region_with_stats(l,b,sizel,sizeb,config):
             np.int64(config['n_detection_threshold']),
             np.float64(config['lower_k']),
             np.float64(config['upper_k']),
-            poly_string), 
+            poly_string,
+            phot_string), 
         **config.wsdb_kwargs))
     
+    data = data[data['ks_b_ivw_mean_mag']>0.].reset_index(drop=True)
+    
     data = pct_diff(data)
+    data = error_ratios(data)
     
     data = data.sort_values(by='sep_arcsec').drop_duplicates(subset=['sourceid']).reset_index(drop=True)
     
@@ -183,8 +192,9 @@ def downsample_training_set(data, number):
                                  range=np.nanpercentile(data['ks_b_ivw_mean_mag'].values,[1.,99.]))
     bc = .5*(bins[1:]+bins[:-1])
     weights = np.interp(data['ks_b_ivw_mean_mag'].values, bc, weight_b)
+    weights[weights<1.]=1.
     return data.iloc[np.random.choice(np.arange(len(data)), number, replace=False,
-                                      p=1./weights/np.sum(1./weights))].reset_index(drop=True)
+                                      p=1./weights/np.nansum(1./weights))].reset_index(drop=True)
 
 
 def generate_gaia_training_set(l,b,sizel,sizeb,percentile,size,config):

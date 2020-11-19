@@ -14,10 +14,25 @@ var_indices = ["ks_stdev","ks_mad","ks_kurtosis","ks_skew",
                "ks_p84","ks_p16","ks_p75","ks_p25"]
 var_string = 's.'+',s.'.join(var_indices)
 
+phot_stats = ["ks_b_ivw_err_mag", "j_b_ivw_mean_mag", "h_b_ivw_mean_mag", 
+              "ks_b_ivw_mean_mag", "ks_n_b_phot"]
+phot_string = 'y.'+',y.'.join(phot_stats)
+
 def pct_diff(dataV):
     
     for p in [[75,25],[84,16],[95,5],[99,1],[100,0]]:
         dataV['ks_p%i_p%i' % (p[0], p[1])] = dataV['ks_p%i' % p[0]] - dataV['ks_p%i' % p[1]]
+        
+    return dataV
+
+def error_ratios(dataV):
+    
+    dataV['ks_mean_error'] = dataV['ks_b_ivw_err_mag'] * np.sqrt(dataV['ks_n_b_phot'])
+    
+    for p in ["ks_stdev", "ks_mad"]:
+        dataV[p+'_over_error'] = dataV[p] / dataV['ks_mean_error']
+    for p in [[75,25],[84,16],[95,5],[99,1],[100,0]]:
+        dataV['ks_p%i_p%i' % (p[0], p[1]) + '_over_error'] = dataV['ks_p%i_p%i' % (p[0], p[1])]/dataV['ks_mean_error']
         
     return dataV
 

@@ -1,6 +1,7 @@
 from config import *
 import numpy as np
 import pandas as pd
+import os
 import pickle
 from multiprocessing import Pool
 from functools import partial
@@ -11,6 +12,10 @@ from initial_classif.classifier.classifier import binary_classification
 
 def train_classification_region(grid, variable_stars, config, index):
     
+    output_file = config['binary_output_dir'] + 'binary_%i%s.pkl'%(index,''+'_test'*int(config['test']))
+    if os.path.isfile(output_file) and int(config['overwrite'])==0:
+        return
+    
     l,b,sizel,sizeb = grid[index]
     print('Generating Gaia training set for (%s, %s)'%(l,b))
     gaia = generate_gaia_training_set(l, b, sizel * 60., sizeb * 60., 
@@ -20,38 +25,48 @@ def train_classification_region(grid, variable_stars, config, index):
     gaia['detailed_var_class']='CONST'
     gaia['var_class']='CONST'
     
+#     variable_stars = variable_stars[~((variable_stars['detailed_var_class']=='OSARG')|
+#                                       (variable_stars['detailed_var_class']=='DSCT'))].reset_index(drop=True)
+    
     full_data = pd.concat([variable_stars, gaia], axis=0, sort=False)
     
     print('Running classifier for (%s, %s): %i stars'%(l,b,len(full_data)))
     
     classifier = binary_classification(full_data)
     
-    with open(config['binary_output_dir'] + 'binary_%i%s.pkl'%(index,''+'_test'*int(config['test'])), 'wb') as f:
+    with open(output_file, 'wb') as f:
         pickle.dump(classifier, f)
         
-
-        
-def run_loop(lstart, lend, bstart, bend, variable_stars, config):
-    
-    sizel, sizeb = np.float64(config['sizel']), np.float64(config['sizeb'])
+def make_grid(lstart,lend,bstart,bend,sizel,sizeb):
     
     l_arr, b_arr = np.arange(lstart, lend, sizel), np.arange(bstart, bend, sizeb)
     l_arr, b_arr = .5*(l_arr[1:]+l_arr[:-1]), .5*(b_arr[1:]+b_arr[:-1])
-    
     L,B = np.meshgrid(l_arr, b_arr)
+    
     grid = np.vstack([L.flatten(), B.flatten(), 
                       np.ones_like(B.flatten())*sizel, 
                       np.ones_like(B.flatten())*sizeb]).T
+    return pd.DataFrame({'index':np.arange(len(grid)), 
+                  'l':grid[:,0],'b':grid[:,1],
+                  'sizel':grid[:,2],'sizeb':grid[:,3]})
+        
+def run_loop(lstart, lend, bstart, bend, 
+             lstart_disc, lend_disc, bstart_disc, bend_disc, 
+             variable_stars, config):
     
-    pd.DataFrame({'index':np.arange(len(grid)), 'l':L.flatten(),'b':B.flatten()}).to_pickle(
+    sizel, sizeb = np.float64(config['sizel']), np.float64(config['sizeb'])
+    bulge_grid = make_grid(lstart, lend, bstart, bend, sizel, sizeb)
+    disc_grid = make_grid(lstart_disc, lend_disc, bstart_disc, bend_disc, sizel, sizeb)
+    
+    grid = pd.concat([bulge_grid, disc_grid], axis=0)
+    
+    grid.to_pickle(
         config['binary_output_dir'] + 'grid%s.pkl'%(''+'_test'*int(config['test']))
     )
     
-    p = Pool(32)
-    p.map(partial(train_classification_region, grid, variable_stars, config),
-          np.arange(len(grid)))
-    p.close()
-    p.join()
+    with Pool(np.int64(config['var_cores'])) as p:
+        p.map(partial(train_classification_region, grid, variable_stars, config),
+              np.arange(len(grid)))
         
     
 if __name__=="__main__":
@@ -65,15 +80,17 @@ if __name__=="__main__":
     variable_stars['var_class']='VAR'
     
     if int(config['test']):
-        config['sizel']=0.6
-        config['sizeb']=0.6
+        config['sizel']=0.04
+        config['sizeb']=0.08
         l, b = 0.787411, -0.054603
         run_loop(l - .5 * np.float64(config['sizel']), 
                  l + 1.01 * .5 * np.float64(config['sizel']), 
                  b - .5 * np.float64(config['sizeb']),
                  b + 1.01 * .5 * np.float64(config['sizeb']), 
+                 0.,0.,0.,0.,
                  variable_stars, config)
     else:
-        run_loop(-10,10.1,-10,10.1, variable_stars, config)
-#         run_loop(-10,-10.+np.float64(config['sizel'])+0.1,
-#                  -10,-10.+np.float64(config['sizeb'])+0.1, variable_stars, config)
+        run_loop(-10,10.8,-10.3,5.2, 
+                 -65.6428571434, -9.9,
+                 -1.1057142857*2, 2.3,
+                 variable_stars, config)
