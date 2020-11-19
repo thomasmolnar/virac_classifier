@@ -8,11 +8,28 @@ from multiprocessing import Pool
 from initial_classif.classifier.classifier import binary_classification
 from fine_classif.classifier.classifier import variable_classification
 from interface_utils.add_stats import pct_diff, main_string, var_string, phot_string, error_ratios
-from run_variable_classifier import get_periodic_features, save_cols, save_cols_types
+from run_variable_classifier import save_cols, save_cols_types
 from interface_utils.light_curve_loader import lightcurve_loader
 
 def wrap(l):
     return l-360.*(l>180.)
+
+
+def get_periodic_features(data, lightcurve_loader, config, serial=True):
+    """
+    Periodic feature extracter - to be used for variable classification
+    """
+    
+    # Load variable light curves in pd format
+    lc = lightcurve_loader.split_lcs(data)
+    
+    # Universal frequency grid conditions 
+    ls_kwargs = {'maximum_frequency': np.float64(config['ls_max_freq'])}
+        
+    #Extract features
+    features = extract_per_feats(lc, data, ls_kwargs, config, serial=serial)
+    
+    return features
 
 def find_cells(input_data, grid):
         

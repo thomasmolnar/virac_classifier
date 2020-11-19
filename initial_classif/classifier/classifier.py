@@ -112,7 +112,7 @@ class classification(object):
         return df[fltr].reset_index(drop=True)
     
     
-    def run(self, training_set, plot_name, nthreads, impute=True, xgb=True, cross_val=True):
+    def run(self, training_set, plot_name, nthreads, impute=True, xgb=False, cross_val=True):
         
         training_set = self.train_feat_clip(training_set, impute)
         

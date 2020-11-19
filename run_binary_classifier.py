@@ -80,8 +80,8 @@ if __name__=="__main__":
     variable_stars['var_class']='VAR'
     
     if int(config['test']):
-        config['sizel']=0.04
-        config['sizeb']=0.08
+        config['sizel']=0.4
+        config['sizeb']=0.8
         l, b = 0.787411, -0.054603
         run_loop(l - .5 * np.float64(config['sizel']), 
                  l + 1.01 * .5 * np.float64(config['sizel']), 
