@@ -25,23 +25,36 @@ def get_periodic_features_var(data, config, serial=True):
                                 from leigh_smith.virac2_ts_tmolnar_train''',
                      **config.wsdb_kwargs))
     lcs = lcs.sort_values(by=['sourceid', 'mjdobs']).reset_index(drop=True)
+    uniq_ids, indices, inv_ids = np.unique(lcs['sourceid'], return_index=True, return_inverse=True)
+    indices = indices[1:]
+    
     data = data.sort_values(by='sourceid').reset_index(drop=True)
     
-    assert(len(data)==len(lcs))
-    return
+    # Add sky position of sources to be passed into periodic computation
+    assert len(data)==len(uniq_ids)
+
+    ras_full = data['ra'].values[inv_ids]
+    decs_full = data['dec'].values[inv_ids]
     
-    indices = np.argwhere(np.diff(lcs['sourceid']) != 0).flatten() + 1
-    datadict = {c: np.split(lcs[c], indices) for c in list(lcs.keys())}
+    ts_dict = {c: np.split(lcs[c], indices) for c in list(lcs.keys())}
+    ra_dict = dict(ra=np.split(ras_full, indices))
+    dec_dict = dict(dec=np.split(decs_full, indices))
+
+    datadict = {**ts_dict, **ra_dict, **dec_dict}
     lightcurves = [
         pd.DataFrame(dict(list(zip(datadict, t))))
         for t in zip(*list(datadict.values()))
     ]
     
     # Universal frequency grid conditions 
-    ls_kwargs = {'maximum_frequency': np.float64(config['ls_max_freq'])}
-        
+    ls_kwargs = dict(maximum_frequency=np.float64(config['ls_max_freq']),
+                     minimum_frequency=np.float64(config['ls_min_freq']))
+    method_kwargs = dict(irreg=False, use_fft=False, use_nfft=False)
+    
+    
     #Extract features
-    features = extract_per_feats(lc, data, ls_kwargs, config, serial=serial)
+    features = extract_per_feats(lightcurves, data, ls_kwargs, method_kwargs,
+                                 config, serial=serial)
     
     return features
 
