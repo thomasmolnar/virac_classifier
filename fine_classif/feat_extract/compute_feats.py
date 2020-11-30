@@ -93,33 +93,26 @@ def periodic_feats(times, mags, errors, nterms=4, npoly=1, max_freq=20.):
             'phi_3':phases[3], 'delta_loglik':delta_loglik, 'disp_min_chi2':disp_min_chi2}
 
 
-def periodic_feats_force(times, mags, errors, period, nterms=4, npoly=1):
+def periodic_feats_force(times, mags, errors, freq_dict,
+                         nterms=4, npoly=1,method_kwargs={}):
     """
     Returns periodic features (fourier components) of photometric lightcurves
-    with forced frequency input grid (determined from LombScargle)
+    with forced frequency input grid (determined from LombScargle).
     
     """
-    
-    # Forced frequency grid 
-    f0 = 1. / (4*period)
-    f1 = 1. / (period)
-    Nf = 10
-
-        
     results = fourier_poly_chi2_fit_full(times=times,
                                          mag=mags,
                                          err=errors,
-                                         f0=f0,
-                                         f1=f1,
-                                         Nf=Nf,
+                                         freq_dict=freq_dict,
                                          nterms=nterms,
                                          npoly=npoly,
                                          regularization=0.1,
                                          keep_small=True, 
                                          code_switch=True,
-                                         use_power_of_2=True, force=True, 
-                                         use_nfft=False)
-    
+                                         use_power_of_2=True,
+                                         force=True,
+                                         **method_kwargs)
+        
     # Calculate delta log likelihood between periodic and constant Gaussian scatter models
     pred_mean = retrieve_fourier_poly(times=times, results=results)
     delta_loglik = get_delta_log_likelihood(mags, errors, pred_mean=pred_mean)
@@ -167,7 +160,7 @@ def correct_to_HJD(data, ra, dec):
                           dec * u.deg,
                           frame='icrs')
     
-    times = time.Time(data['mjdobs'][0],
+    times = time.Time(data['mjdobs'].values[0],
                       format='mjd',
                       scale='utc',
                       location=paranal)
@@ -209,12 +202,20 @@ def sigclipper(data, sig_thresh=4.):
     return data[np.abs(data['mag'].values - midd) / stdd < sig_thresh].reset_index(
         drop=True)
 
-def source_feat_extract(data, config, ls_kwargs={}):
+def source_feat_extract(lc, config, ls_kwargs={}, method_kwargs={}):
     """
     Wrapper to extract all features for a given
     source light curve (panda format).
    
-    input: Time Series light curve data
+    inputs: 
+    
+    - data = [ra, dec, lc_df] Time Series light curve data and position for each source
+    
+    - config: configuration of global variables
+
+    - ls_kwargs: arguments to be passed for frequency grid spacing in LombScargle
+    
+    - method_kwargs = {irreg=(False), use_fft=(False), use_nfft=(False)}, arguments defining method of computation
     
     returns: dict of features
     
@@ -223,7 +224,7 @@ def source_feat_extract(data, config, ls_kwargs={}):
     
     """
     # Split source info
-    ra, dec, lc = data[0],data[1],data[2]
+    ra, dec = lc['ra'].values[0], lc['dec'].values[0]
     sourceid = lc['sourceid'].values[0]
         
     # Correct MJD to HJD
@@ -243,19 +244,30 @@ def source_feat_extract(data, config, ls_kwargs={}):
     nterms, npoly = int(config['nterms']), int(config['npoly'])
     times = np.array(lc_clean.HJD.values)
     mags = np.array(lc_clean.mag.values)
-    errors = np.array(lc_clean.error.values)
+    errors = np.array(lc_clean.emag.values)
                  
     # Extract non-periodic statistics 
     nonper_feats = magarr_stats(mags)    
                  
     # Division into forced frequency grid input or not for lsq comp.
     if int(config['force_method']):
-        per_dict = lombscargle_stats(times, mags, errors, **ls_kwargs)
-        per_feats = periodic_feats_force(times, mags, errors, per_dict['ls_period'], nterms, npoly)
+       # Division into irregular grid input or not for lsq comp.
+        if method_kwargs['irreg']:
+            per_dict = lombscargle_stats(times, mags, errors, **ls_kwargs)
+            
+            freq_dict = dict(freq_grid=per_dict['top_distinct_freqs']) # Top N LS frequency grid
+            per_feats = periodic_feats_force(times, mags, errors, freq_dict=freq_dict,
+                                             nterms=nterms,npoly=npoly, method_kwargs=method_kwargs)
+        else:
+            per_dict = lombscargle_stats(times, mags, errors, irreg=False, **ls_kwargs)
+            
+            period = per_dict['ls_period']
+            freq_dict = dict(f0=1./(2*period), f1=1./period, Nf=2) # Forced frequency grid
+            per_feats = periodic_feats_force(times, mags, errors, freq_dict=freq_dict,
+                                             nterms=nterms,npoly=npoly, method_kwargs=method_kwargs)
+        
         lag_feats = find_lag(times, period=per_dict['ls_period'])
-                 
-        features = {'sourceid':sourceid, 
-                    **per_feats, **per_dict, **nonper_feats, **lag_feats}
+        features = {'sourceid':sourceid, **per_feats, **per_dict, **nonper_feats, **lag_feats}
         
     else:
         per_feats = periodic_feats(times, mags, errors, nterms, npoly)
