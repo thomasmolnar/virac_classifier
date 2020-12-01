@@ -30,6 +30,8 @@ def get_periodic_features_var(data, config, serial=True):
     
     data = data.sort_values(by='sourceid').reset_index(drop=True)
     
+    print(len(data))
+
     # Add sky position of sources to be passed into periodic computation
     assert len(data)==len(uniq_ids)
 
@@ -78,6 +80,7 @@ def generate_secondstage_training(config):
     constant_data = generate_gaia_training_set_random(len(variable_stars)//10, config,
                                                       np.float64(config['gaia_percentile']),
                                                       600000)
+    print(constant_data.columns)
     constant_data['var_class']='CONST'
     
     trainset = pd.concat([variable_stars, constant_data], axis=0, sort=False).reset_index(drop=True)
@@ -92,9 +95,9 @@ if __name__=="__main__":
     config.request_password()
     
     trainset = generate_secondstage_training(config)
-    
     features = get_periodic_features_var(trainset, config, serial=False)
-    
+    features.to_csv('/local/scratch_2/jls/virac_classifier/variable/variable_period_features.csv')
+ 
 #     features= features[~features['error']].reset_index(drop=True)
     
 #     classifier = variable_classification(features, config)

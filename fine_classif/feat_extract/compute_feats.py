@@ -226,7 +226,8 @@ def source_feat_extract(lc, config, ls_kwargs={}, method_kwargs={}):
     # Split source info
     ra, dec = lc['ra'].values[0], lc['dec'].values[0]
     sourceid = lc['sourceid'].values[0]
-        
+    print(sourceid)
+    
     # Correct MJD to HJD
     correct_to_HJD(lc, ra, dec)
     
