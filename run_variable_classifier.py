@@ -14,7 +14,7 @@ def get_periodic_features_var(data, config, serial=True):
     """
     Periodic feature extracter - to be used for variable classification
     """
-    
+    print("Loading Timeseries data...")
     lcs = pd.DataFrame(sqlutil.get('''select sourceid, 
                                 unnest(mjdobs) as mjdobs,
                                 unnest(mag) as mag,
@@ -24,6 +24,8 @@ def get_periodic_features_var(data, config, serial=True):
                                 unnest(ambiguous_match) as ambiguous_match  
                                 from leigh_smith.virac2_ts_tmolnar_train''',
                      **config.wsdb_kwargs))
+    print("---Timeseries data loaded.")
+    
     lcs = lcs.sort_values(by=['sourceid', 'mjdobs']).reset_index(drop=True)
     uniq_ids, indices, inv_ids = np.unique(lcs['sourceid'], return_index=True, return_inverse=True)
     indices = indices[1:]
@@ -34,6 +36,8 @@ def get_periodic_features_var(data, config, serial=True):
 
     # Add sky position of sources to be passed into periodic computation
     assert len(data)==len(uniq_ids)
+    
+    assert all(np.diff(data['sourceid'].values, uniq_ids)==0)
 
     ras_full = data['ra'].values[inv_ids]
     decs_full = data['dec'].values[inv_ids]
@@ -51,12 +55,26 @@ def get_periodic_features_var(data, config, serial=True):
     # Universal frequency grid conditions 
     ls_kwargs = dict(maximum_frequency=np.float64(config['ls_max_freq']),
                      minimum_frequency=np.float64(config['ls_min_freq']))
-    method_kwargs = dict(irreg=False, use_fft=False, use_nfft=False)
+    method_kwargs = dict(irreg=False)
     
+    variable_output_dir = str(config['variable_output_dir'])
     
     #Extract features
-    features = extract_per_feats(lightcurves, data, ls_kwargs, method_kwargs,
-                                 config, serial=serial)
+    step = len(lightcurves)//10
+    curr_start, curr_end = 0, step
+    batch_numb = 0
+    total_features = pd.DataFrame()
+    while curr_end < len(lightcurves):
+        batch_features = extract_per_feats(lightcurves[curr_start:curr_end],
+                                           data, ls_kwargs, method_kwargs,
+                                           config, serial=serial)
+        batch_features.to_pickle(variable_output_dir+'variable_features_batch{}.pkl'.format(batch_numb))
+        total_features = pd.concat([total_features, batch_features])
+        batch_numb+=1
+        curr_start+=step
+        curr_end+=step
+    
+    total_features.to_pickle(variable_output_dir+'variable_features_total.pkl')
     
     return features
 
@@ -71,7 +89,7 @@ save_cols = ['sourceid','ra','dec','l','b','ks_b_ivw_mean_mag',
 
 save_cols_types = dict(zip(['amp_0', 'amp_1', 'amp_2', 'amp_3', 
                  'amplitude', 'beyondfrac', 'delta_loglik', 
-                 'ls_period', 'lsq_period',
+                 'ls_period', 'ls_period_error', 'lsq_period',
                  'max_pow', 'max_time_lag', 'pow_mean_disp', 'time_lag_mean',
                  'phi_0','phi_1','phi_2','phi_3','JK_col','HK_col','prob'],[np.float32]*20))
 
@@ -84,19 +102,25 @@ def generate_secondstage_training(config):
     constant_data['var_class']='CONST'
     
     trainset = pd.concat([variable_stars, constant_data], axis=0, sort=False).reset_index(drop=True)
-    
+
     trainset = trainset[~trainset['sourceid'].duplicated()].reset_index(drop=True)
-        
+    
     return trainset
+
+def generate_periodic_features(config):
+    print("Loading trainset...")
+    trainset = generate_secondstage_training(config)
+    print("---Trainset loaded - {} stars".format(len(trainset)))
+    print("Loading periodic features...")
+    features = get_periodic_features_var(trainset, config, serial=False)
+
 
 if __name__=="__main__":
     
     config = configuration()
     config.request_password()
-    
-    trainset = generate_secondstage_training(config)
-    features = get_periodic_features_var(trainset, config, serial=False)
-    features.to_csv('/local/scratch_2/jls/virac_classifier/variable/variable_period_features.csv')
+ 
+    generate_periodic_features(config)
  
 #     features= features[~features['error']].reset_index(drop=True)
     

@@ -121,8 +121,9 @@ def periodic_feats_force(times, mags, errors, freq_dict,
     amps = np.array(results['amplitudes'])
     phases = np.array(results['phases'])
     per = float(results['lsq_period'])
+    per_error = results['lsq_period_error']
     
-    return {'lsq_period':per, 'amp_0':amps[0], 'amp_1':amps[1], 'amp_2':amps[2],
+    return {'lsq_period':per, 'lsq_period_error':per_error, 'amp_0':amps[0], 'amp_1':amps[1], 'amp_2':amps[2],
             'amp_3':amps[3], 'phi_0':phases[0], 'phi_1':phases[1], 'phi_2':phases[2],
             'phi_3':phases[3], 'delta_loglik':delta_loglik}
 
@@ -198,7 +199,6 @@ def sigclipper(data, sig_thresh=4.):
     
     stdd = .5 * np.diff(np.nanpercentile(data['mag'].values, [16, 84]))
     midd = np.nanmedian(data['mag'].values)
-    
     return data[np.abs(data['mag'].values - midd) / stdd < sig_thresh].reset_index(
         drop=True)
 
@@ -230,12 +230,12 @@ def source_feat_extract(lc, config, ls_kwargs={}, method_kwargs={}):
     
     # Correct MJD to HJD
     correct_to_HJD(lc, ra, dec)
-    
+
     # Pre-process light curve data with quality cuts and 3 sigma conservative cut 
     chi_cut, ast_cut = float(config['chi_cut']), float(config['ast_cut'])
     amb_corr = int(config['amb_correction'])
     sig_thresh = float(config['sig_thresh'])
-    lc_clean = sigclipper(quality_cut(lc, chi_cut, ast_cut, amb_corr), sig_thresh)
+    lc_clean = sigclipper(quality_cut(lc.dropna(subset=['mag', 'emag']), chi_cut, ast_cut, amb_corr), sig_thresh)
     
     # Length check post quality cuts
     if len(lc_clean)<=int(config['n_detection_threshold']):

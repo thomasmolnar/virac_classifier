@@ -120,6 +120,6 @@ def extract_per_feats(lc_dfs, input_df, ls_kwargs, method_kwargs,
     
     feature_df = pd.DataFrame.from_dict(features)
 
-    #final_feature_df = finalise_feats(feature_df, input_df, config)
-    return feature_df
-    #return final_feature_df
+    final_feature_df = finalise_feats(feature_df, input_df, config)
+    
+    return final_feature_df

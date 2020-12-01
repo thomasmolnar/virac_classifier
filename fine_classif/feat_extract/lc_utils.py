@@ -824,6 +824,46 @@ def lsq_fit_find_uncertainties(results, argc):
 #     results['fourier_coeffs_cov']+=1e-4*np.min(np.abs(results['fourier_coeffs_cov']))*I
     return results
 
+def lsq_uncertainties_irreg(times, mag, err, nterms, npoly, freq_dict, df, top_freq):
+    '''
+    Determine Least Squares period error based on curvature of chi2 surface
+    (for irregular frequency grid entry)
+    
+    Input:
+    
+    - freq_grid: [f_out-df, f_out, f_out_df]
+    
+    '''
+
+    fft_kwargs = dict()
+    temp_results = fourier_poly_chi2_fit_transpose_irreg(times,
+                                    mag,
+                                    err,
+                                    nterms=nterms,
+                                    normalization="chi2",
+                                    npoly=npoly,
+                                    regularization=0.,
+                                    regularization_power=2.,
+                                    time_zeropoint_poly=2457000.,
+                                    regularize_by_trace=True,
+                                    **freq_dict, **fft_kwargs)
+    
+    # Estimate error from chi2 curvature
+    temp_results['chi_squared_grid'] = temp_results.pop('power')
+    lsq_freq_error = 1. / (.5 *
+                                      (temp_results['chi_squared_grid'][0] +
+                                       temp_results['chi_squared_grid'][2] -
+                                       2 * temp_results['chi_squared_grid'][1]) /
+                                      df**2)
+    if lsq_freq_error < 0.:
+        lsq_period_error = np.nan
+    else:
+        lsq_freq_error = np.sqrt(lsq_freq_error)
+        lsq_period_error = lsq_freq_error/(top_freq**2)
+        
+    return lsq_period_error
+
+
 def next_power_of_2(x):  
     return 1 if x == 0 else 2**(x - 1).bit_length()
 
@@ -850,7 +890,7 @@ def fourier_poly_chi2_fit_full(times,
                                freq_dict, 
                                nterms=1,
                                npoly=1,
-                               regularization=0.,
+                               regularization=0.1,
                                regularization_power=2.,
                                time_zeropoint_poly=2457000.,
                                keep_small=True,
@@ -905,7 +945,6 @@ def fourier_poly_chi2_fit_full(times,
                                     regularize_by_trace=regularize_by_trace,
                                     **freq_dict, **fft_kwargs)
     
-    
     results['chi_squared_grid'] = results.pop('power')
     
     # Fill with best result
@@ -929,7 +968,16 @@ def fourier_poly_chi2_fit_full(times,
         disp_min = results['lsq_chi_squared']/np.mean(results['chi_squared_grid'])
         results['lsq_chi2_min_disp'] = disp_min
     
-    results = lsq_fit_find_uncertainties(results, argc)
+    # Period/Frequency error estimate based on curvature of chi2 surface
+    if irreg:
+        baseline = times.max() - times.min()
+        df = 0.2 / baseline
+        top_freq = results['frequency_grid'][argc]
+        freq_curv = dict(freq_grid=[top_freq-df, top_freq, top_freq+df])
+        results['lsq_period_error'] = lsq_uncertainties_irreg(times, mag, err, nterms, npoly, freq_curv, df, top_freq)
+        
+    else:   
+        results = lsq_fit_find_uncertainties(results, argc)
 
     # Compute amplitudes & phases
     results['amplitudes'] = np.sqrt(
@@ -1014,9 +1062,11 @@ def power_stats(power):
     sd = np.std(power)
     
     mean_disp = abs(max_pow-mean)/sd
-    med_disp = abs(max_pow-median)/sd
     
     return {'pow_mean_disp':mean_disp}
+
+# Sidereal and standard day aliases to be removed
+alias_periods = np.array([0.99726, 0.99999, 0.99726/2, 0.99999/2])
 
 def get_topN_freq(freq, power, N=30, tol=1e-3):
     """
@@ -1025,9 +1075,15 @@ def get_topN_freq(freq, power, N=30, tol=1e-3):
     """
     arg_pows = np.argsort(power)
     topN_freqs = freq[arg_pows][-N:][::-1]
+    topN_powrs = power[arg_pows][-N:][::-1]
+
+    _ind = 0
+    while any(np.isclose(1./topN_freqs[_ind], alias_periods, rtol=0, atol=0.00009)):
+        _ind+=1
+    
+    ls_period, max_pow = 1./topN_freqs[_ind], topN_freqs[_ind]
     
     top_distinct_freqs = []
-    
     while len(topN_freqs)>=1:
         curr = topN_freqs[0]
         top_distinct_freqs.append(curr)
@@ -1036,7 +1092,7 @@ def get_topN_freq(freq, power, N=30, tol=1e-3):
         group_bool = np.isclose(curr, topN_freqs, rtol=0., atol=tol)
         topN_freqs = topN_freqs[~(group_bool)]
         
-    return top_distinct_freqs
+    return dict(ls_period=ls_period, max_pow=max_pow, top_distinct_freqs=top_distinct_freqs) 
 
 
 def lombscargle_stats(times, mags, errors, N=30, irreg=True, **ls_kwargs):
@@ -1050,20 +1106,18 @@ def lombscargle_stats(times, mags, errors, N=30, irreg=True, **ls_kwargs):
         
     freq, power = model.autopower(**ls_kwargs)
     
-    # Find max power and hence most likely period
-    periods = 1./freq   
-    max_pow_arg = np.argmax(power)
-    period, max_pow = periods[max_pow_arg], power[max_pow_arg]
-    
     # Find power array stats
     pow_stats = power_stats(power)
     
     if irreg:
         # Determine top N (distinct) frequencies
-        top_distinct_freqs = get_topN_freq(freq, power, N=N)
-        out = {'ls_period':period, 'max_pow':max_pow, 'top_distinct_freqs':top_distinct_freqs,
-               **pow_stats}
+        freqdict = get_topN_freq(freq, power, N=N)
+        out = {**freqdict, **pow_stats}
     else:
+        # Find max power and hence most likely period
+        periods = 1./freq
+        max_pow_arg = np.argmax(power)
+        period, max_pow = periods[max_pow_arg], power[max_pow_arg]
         out = {'ls_period':period, 'max_pow':max_pow, **pow_stats}
     
     return out
