@@ -202,7 +202,7 @@ def sigclipper(data, sig_thresh=4.):
     return data[np.abs(data['mag'].values - midd) / stdd < sig_thresh].reset_index(
         drop=True)
 
-def source_feat_extract(lc, config, ls_kwargs={}, method_kwargs={}, constant_mag=False):
+def source_feat_extract(lc, config, ls_kwargs={}, method_kwargs={}):
     """
     Wrapper to extract all features for a given
     source light curve (panda format).

@@ -104,7 +104,7 @@ def finalise_feats(features_df, input_df, config):
     
 
 def extract_per_feats(lc_dfs, input_df, ls_kwargs, method_kwargs,
-                      config, serial=True, constant_mag=False):
+                      config, serial=True):
     """
     Wrapper for periodic feature extraction based on list of light curves
     in panda format
@@ -112,11 +112,11 @@ def extract_per_feats(lc_dfs, input_df, ls_kwargs, method_kwargs,
     """
     if serial:
         features = [source_feat_extract(lc, ls_kwargs=ls_kwargs,
-                    method_kwargs=method_kwargs, config=config, constant_mag=constant_mag) for lc in lc_dfs]
+                    method_kwargs=method_kwargs, config=config) for lc in lc_dfs]
     else:
         with Pool(int(config['var_cores'])) as p:
             features = p.map(partial(source_feat_extract, ls_kwargs=ls_kwargs,
-                                     method_kwargs=method_kwargs, config=config, constant_mag=constant_mag), lc_dfs)
+                                     method_kwargs=method_kwargs, config=config), lc_dfs)
     
     feature_df = pd.DataFrame.from_dict(features)
 
