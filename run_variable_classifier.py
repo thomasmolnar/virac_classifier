@@ -81,16 +81,6 @@ def get_periodic_features_var(data, config, serial=True):
     return total_features
 
 
-# save_cols = ['sourceid','ra','dec','l','b','ks_b_ivw_mean_mag',
-#              'amp_0', 'amp_1', 'amp_2', 'amp_3', 
-#              'amp_double_0', 'amp_double_1', 'amp_double_2', 'amp_double_3', 
-#              'amplitude', 'beyondfrac', 'delta_loglik', 
-#              'ls_period', 'lsq_period',
-#              'max_pow', 'max_time_lag', 'pow_mean_disp', 'time_lag_mean',
-#              'phi_0','phi_1','phi_2','phi_3',
-#              'JK_col','HK_col',
-#              'class','prob']
-
 save_cols_types = dict(zip(['amp_0', 'amp_1', 'amp_2', 'amp_3', 
                  'amp_double_0', 'amp_double_1', 'amp_double_2', 'amp_double_3', 
                  'amplitude', 'beyondfrac', 'delta_loglik', 

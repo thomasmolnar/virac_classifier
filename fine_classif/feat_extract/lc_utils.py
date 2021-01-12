@@ -139,9 +139,7 @@ from itertools import product
 def fourier_poly_chi2_fit(times,
                           mag,
                           err,
-                          f0,
-                          f1,
-                          Nf,
+                          freq_dict,
                           nterms=1,
                           normalization='standard',
                           npoly=1,
@@ -158,8 +156,9 @@ def fourier_poly_chi2_fit(times,
         ----------
         times, mag, err : array_like
             time, values and errors for datapoints
-        f0, f1, Nf : (float, float, int)
-            parameters describing the frequency grid, f = np.linspace(f0,f1,Nf)
+        freq_dict : dictionary for frequency grid
+            either {'f0':float, 'f1':float, 'Nf':int} so f = np.linspace(f0,f1,Nf)
+            or {'freq_grid': array}
         nterms : int
             number of Fourier terms to use (default 1)
         npoly: int
@@ -178,11 +177,7 @@ def fourier_poly_chi2_fit(times,
         regularize_by_trace: bool (default = True)
             regularization = regularization * sum(inverr^2) -- Vanderplas & Ivezic (2015)
     """
-
-    df = (f1 - f0) / (Nf - 1)
-    if df <= 0:
-        raise ValueError("df must be positive")
-
+    
     inverr2 = 1. / err**2
     ws = np.sum(inverr2)
     meanmag = np.dot(inverr2, mag) / ws
@@ -190,6 +185,18 @@ def fourier_poly_chi2_fit(times,
     magw = inverr2 * mag
     magws = np.sum(magw)
 
+    if 'f0' in freq_dict:
+        f0, f1, Nf = freq_dict['f0'], freq_dict['f1'], freq_dict['Nf']
+        freq_grid = np.linspace(f0, f1, Nf)
+        df = (f1 - f0) / (Nf - 1)
+        if df <= 0:
+            raise ValueError("df must be positive")
+        kwargs = dict(f0=f0, df=df, use_fft=use_fft, N=Nf)
+    else:
+        freq_grid = freq_dict['freq_grid']
+        Nf = len(freq_grid)
+        kwargs = dict(freq_grid=freq_grid, irreg=True)
+    
     # Scale regularization to number of datapoints
     if regularize_by_trace:
         regularization *= np.sum(inverr2)
@@ -201,8 +208,6 @@ def fourier_poly_chi2_fit(times,
     P = np.empty((1 + nterms, Nf), dtype=np.complex)
     P[0, :] = magws
     QT = np.empty((npoly - 1, nterms, Nf), dtype=np.complex)
-
-    kwargs = dict(f0=f0, df=df, use_fft=use_fft, N=Nf)
     
     Q[1:] = np.array([
         trig_sum_nfft(times, inverr2, k, use_nfft, **kwargs)
@@ -218,181 +223,6 @@ def fourier_poly_chi2_fit(times,
         trig_sum_nfft(times,
                       inverr2 * np.power(times - time_zeropoint_poly, p), k,
                       use_nfft, **kwargs) for p in range(1, npoly) 
-    ] for k in range(1, nterms + 1)])
-
-    Pl = np.array([
-        np.sum(np.power(times - time_zeropoint_poly, k) * magw)
-        for k in range(1, npoly)
-    ])
-    
-    Ql = np.array([
-        np.sum(np.power(times - time_zeropoint_poly, k) * inverr2)
-        for k in range(1, 2 * npoly - 1)
-    ])
-    
-    beta = np.empty((2 * nterms + npoly, Nf))
-    alpha = np.empty((2 * nterms + npoly, 2 * nterms + npoly, Nf))
-    
-    p = np.empty(Nf)
-    soln = np.empty((Nf, 2 * nterms + npoly))
-
-    beta[:1 + 2 * nterms:2] = np.real(P)
-    beta[1:1 + 2 * nterms:2] = np.imag(P[1:])
-    beta[1 + 2 * nterms:] = Pl[:,np.newaxis]
-
-    # Looks odd but when negative indices they are always zero
-    for n in range(nterms + 1):
-        for m in range(nterms + 1):
-            alpha[2 * n - 1, 2 * m - 1] = np.real(
-                .5 * (Q[abs(m - n)] - Q[m + n]))
-            alpha[2 * n, 2 * m] = np.real(.5 *
-                                             (Q[abs(m - n)] + Q[m + n]))
-            alpha[2 * n, 2 * m - 1] = np.imag(
-                .5 * (np.sign(m - n) * Q[abs(m - n)] + Q[m + n]))
-            alpha[2 * n - 1, 2 * m] = np.imag(
-                .5 * (np.sign(n - m) * Q[abs(m - n)] + Q[m + n]))
-    
-    for n in range(1, npoly):
-        for m in range(1, npoly):
-            alpha[2 * nterms + n, 2 * nterms + m] = Ql[m + n - 1]
-    for n in range(1, nterms + 1):
-        for m in range(1, npoly):
-            alpha[2 * n - 1, 2 * nterms + m] = np.imag(QT[n - 1, m - 1])
-            alpha[2 * n, 2 * nterms + m] = np.real(QT[n - 1, m - 1])
-            alpha[2 * nterms + m, 2 * n - 1] = np.imag(QT[n - 1, m - 1])
-            alpha[2 * nterms + m, 2 * n] = np.real(QT[n - 1, m - 1])
-    for m in range(1, npoly):
-        alpha[0, 2 * nterms + m] = Ql[m - 1]
-        alpha[2 * nterms + m, 0] = Ql[m - 1]
-
-    # Regularization term
-    if regularization:
-        for m in range(1, nterms + 1):
-            alpha[2 * m - 1, 2 * m - 1] \
-                += regularization * np.power(m, regularization_power)
-            alpha[2 * m, 2 * m] \
-                += regularization * np.power(m, regularization_power)
-
-    ## To avoid singular matrices
-    alpha += (np.identity(2 * nterms + npoly) * np.min(np.abs(alpha)) *
-              1e-4)[:, :, np.newaxis]
-    
-    alpha = alpha.T
-    beta = beta.T
-
-    soln = np.linalg.solve(alpha, beta)
-    
-    p = np.sum(beta * soln, axis=1)
-    p[p < 0.] = 0.
-    soln[:, 0] += meanmag
-
-    if normalization == 'psd':
-        p *= 0.5
-    elif normalization == 'standard':
-        chi2_ref = np.sum(mag * mag * inverr2)
-        p /= chi2_ref
-    elif normalization == 'log':
-        chi2_ref = np.sum(mag * mag * inverr2)
-        p = -np.log(1 - p / chi2_ref)
-    elif normalization == 'model':
-        chi2_ref = np.sum(mag * mag * inverr2)
-        p /= chi2_ref - p
-    elif normalization == 'chi2':
-        chi2_ref = np.sum(mag * mag * inverr2)
-        p = chi2_ref - p
-    else:
-        raise ValueError("normalization='{}' "
-                         "not recognized".format(normalization))
-
-
-    results = {}
-    results['fourier_coeffs_grid'] = soln
-    results['frequency_grid'] = np.linspace(f0, f1, Nf)
-    results['inv_covariance_matrix'] = alpha
-    results['power'] = p
-    results['chi2_ref'] = np.sum(mag * mag * inverr2)
-
-    return results
-
-
-def fourier_poly_chi2_fit_irreg(times,
-                          mag,
-                          err,
-                          freq_grid,
-                          nterms=1,
-                          normalization='standard',
-                          npoly=1,
-                          regularization=0.,
-                          regularization_power=2.,
-                          time_zeropoint_poly=2457000.,
-                          regularize_by_trace=True):
-    """
-        Implementation of astropy standard lombscargle with irregular frequency grid input. (Uses
-        standard trigonometric sum O[N^2])
-        Faster because the linalg.solve is vectorized
-        
-        Parameters
-        ----------
-        times, mag, err : array_like
-            time, values and errors for datapoints
-        freq_grid : list
-            Irregular frequency grid
-        nterms : int
-            number of Fourier terms to use (default 1)
-        npoly: int
-            number of polynomial terms to use (default 1)
-        use_nfft: bool
-            if True, use NFFT library. This puts limitations on frequency grid so 
-            defaults to no NFFT if conditions not satisfied.
-        normalization: string
-            how to normalize power (see astropy.timeseries.LombScargle)
-        regularization: float (default = 0.)
-            regularization term sum_i (y-Mx)^2/sigma^2 + regularization n M^T M
-        regularization_power: float (default = 2.)
-            power of k to raise regularization term to
-        time_zeropoint_poly: float (default = 2457000.) 
-            time shift to apply when evaluting polynomial terms
-        regularize_by_trace: bool (default = True)
-            regularization = regularization * sum(inverr^2) -- Vanderplas & Ivezic (2015)
-    """
-    
-    # Magnitude/Error vectors initialise
-    inverr2 = 1. / err**2
-    ws = np.sum(inverr2)
-    meanmag = np.dot(inverr2, mag) / ws
-    mag = mag - meanmag
-    magw = inverr2 * mag
-    magws = np.sum(magw)
-    # Scale regularization to number of datapoints
-    if regularize_by_trace:
-        regularization *= np.sum(inverr2)
-    else:
-        regularization *= len(inverr2)
-
-    # Number of frequencies in irregular grid    
-    Nf = len(freq_grid)
-    kwargs = dict(freq_grid=freq_grid, irreg=True)
-    
-    Q = np.empty((1 + 2 * nterms, Nf), dtype=np.complex)
-    Q[0, :] = ws
-    P = np.empty((1 + nterms, Nf), dtype=np.complex)
-    P[0, :] = magws
-    QT = np.empty((npoly - 1, nterms, Nf), dtype=np.complex)
-    
-    
-    Q[1:] = np.array([
-        trig_sum_nfft(times, inverr2, k, **kwargs)
-        for k in range(1, 2 * nterms + 1)
-    ])
-    
-    P[1:] = np.array([
-        trig_sum_nfft(times, magw, k, **kwargs)
-        for k in range(1, nterms + 1)
-    ])
-    
-    QT = np.array([[
-        trig_sum_nfft(times,
-                      inverr2 * np.power(times - time_zeropoint_poly, p), k, **kwargs) for p in range(1, npoly) 
     ] for k in range(1, nterms + 1)])
 
     Pl = np.array([

@@ -62,7 +62,8 @@ def compute_peak_properties(times, mags, errors, results):
                                          Nf=2,
                                          nterms=results['lsq_nterms'],
                                          npoly=results['lsq_npoly'],
-                                         regularization=results['lsq_regularization'])
+                                         regularization=results['lsq_regularization'],
+                                         check_multiples=False)
         amp_double, phase_double = results_d['amplitudes'], results_d['phases']
     else:
         amp_double, phase_double = results['amplitudes'], results['phases']
@@ -99,9 +100,7 @@ def periodic_feats(times, mags, errors, nterms=4, nterms_max=10, npoly=1, max_fr
                                          times=times,
                                          mag=mags,
                                          err=errors,
-                                         f0=f0,
-                                         f1=max_freq,
-                                         Nf=Nf,
+                                         freq_dict = {'f0':f0, 'f1':f1, 'Nf':Nf}
                                          nterms_min=nterms,
                                          nterms_max=nterms_max,
                                          npoly=npoly,
@@ -164,10 +163,10 @@ def periodic_feats_force(times, mags, errors, freq_dict,
     
     peak_output = compute_peak_properties(times, mags, errors, results)
     
-    return {'lsq_period':per, 'lsq_period_error':per_error, 'amp_0':amps[0], 'amp_1':amps[1], 'amp_2':amps[2],
-            'amp_3':amps[3], 'phi_0':phases[0], 'phi_1':phases[1], 'phi_2':phases[2],
-            'phi_3':phases[3], 'delta_loglik':delta_loglik,
-            **peak_output}
+    return {'lsq_period':per, 'lsq_period_error':per_error, 
+            'amp_0':amps[0], 'amp_1':amps[1], 'amp_2':amps[2], 'amp_3':amps[3], 
+            'phi_0':phases[0], 'phi_1':phases[1], 'phi_2':phases[2], 'phi_3':phases[3], 
+            'delta_loglik':delta_loglik, **peak_output}
 
 def find_lag(times, period):
     """
