@@ -133,292 +133,10 @@ def trig_sum_nfft(t, y, freq_factor, use_nfft=False, irreg=False, **kwargs):
                                        kwargs['N'], kwargs['df'])
 
 
-def fourier_chi2_fit(times,
-                     mag,
-                     inverr2,
-                     f0,
-                     f1,
-                     Nf,
-                     normalization='standard',
-                     nterms=1,
-                     use_nfft=True):
-    """
-        Faster implementation of astropy fastchi2 lombscargle.
-        Faster because the linalg.solve is vectorized
-        
-        Parameters
-        ----------
-        times, mag, inverrs2 : array_like
-            time, values and inverse errors squared for datapoints
-        f0, f1, Nf : (float, float, int)
-            parameters describing the frequency grid, f = np.linspace(f0,f1,Nf)
-        nterms : float
-            number of Fourier terms to use (default 1)
-        use_nfft: bool
-            if True, use NFFT library. This puts limitations on frequency grid so 
-            defaults to no NFFT if conditions not satisfied.
-        normalization: string
-            how to normalize power (see astropy.timeseries.LombScargle)
-    """
-
-    df = (f1 - f0) / (Nf - 1)
-    if df <= 0:
-        raise ValueError("df must be positive")
-    ws = np.sum(inverr2)
-    meanmag = np.dot(inverr2, mag) / ws
-    mag = mag - meanmag
-    magw = inverr2 * mag
-    magws = np.sum(magw)
-
-    Q = np.empty((Nf, 1 + 2 * nterms), dtype=np.complex)
-    Q[:, 0] = ws
-    P = np.empty((Nf, 1 + nterms), dtype=np.complex)
-    P[:, 0] = magws
-
-    kwargs = dict(f0=f0, df=df, use_fft=True, N=Nf)
-
-    Q[:, 1:] = np.array([
-        trig_sum_nfft(times, inverr2, k, use_nfft, **kwargs)
-        for k in range(1, 2 * nterms + 1)
-    ]).T
-    P[:, 1:] = np.array([
-        trig_sum_nfft(times, magw, k, use_nfft, **kwargs)
-        for k in range(1, nterms + 1)
-    ]).T
-
-    beta = np.empty((Nf, 2 * nterms + 1))
-    alpha = np.empty((Nf, 2 * nterms + 1, 2 * nterms + 1))
-    p = np.empty(Nf)
-    soln = np.empty((Nf, 2 * nterms + 1))
-
-    beta[:, ::2] = np.real(P)
-    beta[:, 1::2] = np.imag(P[:, 1:])
-    # Looks odd but when negative indices alpha set they are always zero
-    # Possibly a saving here by only filling half the array and adding transpose
-    for m in range(nterms + 1):
-        for n in range(nterms + 1):
-            alpha[:, 2 * m - 1, 2 * n - 1] = np.real(
-                .5 * (Q[:, abs(m - n)] - Q[:, m + n]))
-            alpha[:, 2 * m, 2 * n] = np.real(.5 *
-                                             (Q[:, abs(m - n)] + Q[:, m + n]))
-            alpha[:, 2 * m - 1, 2 * n] = np.imag(
-                .5 * (np.sign(m - n) * Q[:, abs(m - n)] + Q[:, m + n]))
-            alpha[:, 2 * m, 2 * n - 1] = np.imag(
-                .5 * (np.sign(n - m) * Q[:, abs(m - n)] + Q[:, m + n]))
-
-    ## To avoid singular matrices
-    alpha += (np.identity(2 * nterms + npoly) * np.min(np.abs(alpha)) *
-              1e-4)[np.newaxis, :, :]
-
-    soln = np.linalg.solve(alpha, beta)
-    p = np.sum(beta * soln, axis=1)
-    p[p < 0.] = 0.
-    soln[:, 0] += meanmag
-
-    if normalization == 'psd':
-        p *= 0.5
-    elif normalization == 'standard':
-        chi2_ref = np.sum(mag * mag * inverr2)
-        p /= chi2_ref
-    elif normalization == 'log':
-        chi2_ref = np.sum(mag * mag * inverr2)
-        p = -np.log(1 - p / chi2_ref)
-    elif normalization == 'model':
-        chi2_ref = np.sum(mag * mag * inverr2)
-        p /= chi2_ref - p
-    elif normalization == 'chi2':
-        chi2_ref = np.sum(mag * mag * inverr2)
-        p = chi2_ref - p
-        p[p < 0.] = np.max(p)
-    else:
-        raise ValueError("normalization='{}' "
-                         "not recognized".format(normalization))
-
-    results = {}
-    results['fourier_coeffs'] = soln
-    results['frequency_grid'] = np.linspace(f0, f1, Nf)
-    results['inv_covariance_matrix'] = alpha
-    results['power'] = p
-
-    return results
-
 import time as Time
 from itertools import product
 
 def fourier_poly_chi2_fit(times,
-                          mag,
-                          err,
-                          f0,
-                          f1,
-                          Nf,
-                          nterms=1,
-                          normalization='standard',
-                          npoly=1,
-                          use_nfft=True,
-                          regularization=0.,
-                          regularization_power=2.,
-                          time_zeropoint_poly=2457000.,
-                          regularize_by_trace=True):
-    """
-        Faster implementation of astropy fastchi2 lombscargle.
-        Faster because the linalg.solve is vectorized
-        
-        Parameters
-        ----------
-        times, mag, err : array_like
-            time, values and errors for datapoints
-        f0, f1, Nf : (float, float, int)
-            parameters describing the frequency grid, f = np.linspace(f0,f1,Nf)
-        nterms : int
-            number of Fourier terms to use (default 1)
-        npoly: int
-            number of polynomial terms to use (default 1)
-        use_nfft: bool
-            if True, use NFFT library. This puts limitations on frequency grid so 
-            defaults to no NFFT if conditions not satisfied.
-        normalization: string
-            how to normalize power (see astropy.timeseries.LombScargle)
-        regularization: float (default = 0.)
-            regularization term sum_i (y-Mx)^2/sigma^2 + regularization n M^T M
-        regularization_power: float (default = 2.)
-            power of k to raise regularization term to
-        time_zeropoint_poly: float (default = 2457000.)
-            time shift to apply when evaluting polynomial terms
-        regularize_by_trace: bool (default = True)
-            regularization = regularization * sum(inverr^2) -- Vanderplas & Ivezic (2015)
-    """
-
-    df = (f1 - f0) / (Nf - 1)
-    if df <= 0:
-        raise ValueError("df must be positive")
-
-    inverr2 = 1. / err**2
-    ws = np.sum(inverr2)
-    meanmag = np.dot(inverr2, mag) / ws
-    mag = mag - meanmag
-    magw = inverr2 * mag
-    magws = np.sum(magw)
-
-    # Scale regularization to number of datapoints
-    if regularize_by_trace:
-        regularization *= np.sum(inverr2)
-    else:
-        regularization *= len(inverr2)
-
-    Q = np.empty((Nf, 1 + 2 * nterms), dtype=np.complex)
-    Q[:, 0] = ws
-    P = np.empty((Nf, 1 + nterms), dtype=np.complex)
-    P[:, 0] = magws
-    QT = np.empty((Nf, nterms, npoly - 1), dtype=np.complex)
-
-    kwargs = dict(f0=f0, df=df, use_fft=True, N=Nf)
-
-    Q[:, 1:] = np.array([
-        trig_sum_nfft(times, inverr2, k, use_nfft, **kwargs)
-        for k in range(1, 2 * nterms + 1)
-    ]).T
-    P[:, 1:] = np.array([
-        trig_sum_nfft(times, magw, k, use_nfft, **kwargs)
-        for k in range(1, nterms + 1)
-    ]).T
-    QT = np.array([[
-        trig_sum_nfft(times,
-                      inverr2 * np.power(times - time_zeropoint_poly, p), k,
-                      use_nfft, **kwargs) for k in range(1, nterms + 1)
-    ] for p in range(1, npoly)]).T
-
-    Pl = np.array([
-        np.sum(np.power(times - time_zeropoint_poly, k) * magw)
-        for k in range(1, npoly)
-    ])
-    Ql = np.array([
-        np.sum(np.power(times - time_zeropoint_poly, k) * inverr2)
-        for k in range(1, 2 * npoly - 1)
-    ])
-    
-    beta = np.empty((Nf, 2 * nterms + npoly))
-    alpha = np.zeros((Nf, 2 * nterms + npoly, 2 * nterms + npoly))
-    alpha_2 = np.zeros((Nf, 2 * nterms + npoly, 2 * nterms + npoly))
-    
-    p = np.empty(Nf)
-    soln = np.empty((Nf, 2 * nterms + npoly))
-
-    beta[:, :1 + 2 * nterms:2] = np.real(P)
-    beta[:, 1:1 + 2 * nterms:2] = np.imag(P[:, 1:])
-    beta[:, 1 + 2 * nterms:] = Pl
-    
-    # Looks odd but when negative indices they are always zero
-    for m in range(nterms + 1):
-        for n in range(nterms + 1):
-            alpha[:, 2 * m - 1, 2 * n - 1] = np.real(
-                .5 * (Q[:, abs(m - n)] - Q[:, m + n]))
-            alpha[:, 2 * m, 2 * n] = np.real(.5 *
-                                             (Q[:, abs(m - n)] + Q[:, m + n]))
-            alpha[:, 2 * m - 1, 2 * n] = np.imag(
-                .5 * (np.sign(m - n) * Q[:, abs(m - n)] + Q[:, m + n]))
-            alpha[:, 2 * m, 2 * n - 1] = np.imag(
-                .5 * (np.sign(n - m) * Q[:, abs(m - n)] + Q[:, m + n]))
-            
-    for m in range(1, npoly):
-        for n in range(1, npoly):
-            alpha[:, 2 * nterms + m, 2 * nterms + n] = Ql[m + n - 1]
-        for n in range(1, nterms + 1):
-            alpha[:, 2 * nterms + m, 2 * n - 1] = np.imag(QT[:, n - 1, m - 1])
-            alpha[:, 2 * nterms + m, 2 * n] = np.real(QT[:, n - 1, m - 1])
-            alpha[:, 2 * n - 1, 2 * nterms + m] = np.imag(QT[:, n - 1, m - 1])
-            alpha[:, 2 * n, 2 * nterms + m] = np.real(QT[:, n - 1, m - 1])
-        alpha[:, 2 * nterms + m, 0] = Ql[m - 1]
-        alpha[:, 0, 2 * nterms + m] = Ql[m - 1]
-
-    # Regularization term
-    if regularization:
-        for m in range(1, nterms + 1):
-            alpha[:, 2 * m - 1, 2 * m -
-                  1] += regularization * np.power(m, regularization_power)
-            alpha[:, 2 * m, 2 *
-                  m] += regularization * np.power(m, regularization_power)
-
-    ## To avoid singular matrices
-    alpha += (np.identity(2 * nterms + npoly) * np.min(np.abs(alpha)) *
-              1e-4)[np.newaxis, :, :]
-
-    soln = np.linalg.solve(alpha, beta)
-    
-    p = np.sum(beta * soln, axis=1)
-    p[p < 0.] = 0.
-    soln[:, 0] += meanmag
-
-    if normalization == 'psd':
-        p *= 0.5
-    elif normalization == 'standard':
-        chi2_ref = np.sum(mag * mag * inverr2)
-        p /= chi2_ref
-    elif normalization == 'log':
-        chi2_ref = np.sum(mag * mag * inverr2)
-        p = -np.log(1 - p / chi2_ref)
-    elif normalization == 'model':
-        chi2_ref = np.sum(mag * mag * inverr2)
-        p /= chi2_ref - p
-    elif normalization == 'chi2':
-        chi2_ref = np.sum(mag * mag * inverr2)
-        p = chi2_ref - p
-    else:
-        raise ValueError("normalization='{}' "
-                         "not recognized".format(normalization))
-
-
-#     p[p<0.]=0.
-
-    results = {}
-    results['fourier_coeffs_grid'] = soln
-    results['frequency_grid'] = np.linspace(f0, f1, Nf)
-    results['inv_covariance_matrix'] = alpha
-    results['power'] = p
-    results['chi2_ref'] = np.sum(mag * mag * inverr2)
-
-    return results
-
-def fourier_poly_chi2_fit_transpose(times,
                           mag,
                           err,
                           f0,
@@ -597,7 +315,7 @@ def fourier_poly_chi2_fit_transpose(times,
     return results
 
 
-def fourier_poly_chi2_fit_transpose_irreg(times,
+def fourier_poly_chi2_fit_irreg(times,
                           mag,
                           err,
                           freq_grid,
@@ -808,20 +526,16 @@ def lsq_fit_find_uncertainties(results, argc):
         results['lsq_freq_error'] = 0.
     else:
         results['lsq_freq_error'] = np.sqrt(results['lsq_freq_error'])
-#     results['lsq_period_original_error'] = results['lsq_freq_error'] * results[
-#         'lsq_period_original']**2
+
+
     gradientA = (results['fourier_coeffs_grid'][argc + 1] -
                  results['fourier_coeffs_grid'][argc - 1]) / (2 * df)
     gradientA *= results['lsq_freq_error']
-    results['fourier_coeffs_cov_best_period'] = results['fourier_coeffs_cov']
+    results['fourier_coeffs_cov_incl_period_error'] = np.copy(results['fourier_coeffs_cov'])
     if np.all(gradientA == gradientA):
-        results['fourier_coeffs_cov'] += \
+        results['fourier_coeffs_incl_period_error'] += \
             gradientA[:,np.newaxis] * gradientA[np.newaxis,:]
 
-
-#     results['fourier_coeffs_cov'] = .5*(results['fourier_coeffs_cov']+results['fourier_coeffs_cov'].T)
-#     I=np.identity(np.shape(results['fourier_coeffs_cov'])[0])
-#     results['fourier_coeffs_cov']+=1e-4*np.min(np.abs(results['fourier_coeffs_cov']))*I
     return results
 
 def lsq_uncertainties_irreg(times, mag, err, nterms, npoly, freq_dict, df, top_freq):
@@ -836,7 +550,7 @@ def lsq_uncertainties_irreg(times, mag, err, nterms, npoly, freq_dict, df, top_f
     '''
 
     fft_kwargs = dict()
-    temp_results = fourier_poly_chi2_fit_transpose_irreg(times,
+    temp_results = fourier_poly_chi2_fit_irreg(times,
                                     mag,
                                     err,
                                     nterms=nterms,
@@ -895,9 +609,9 @@ def fourier_poly_chi2_fit_full(times,
                                time_zeropoint_poly=2457000.,
                                keep_small=True,
                                regularize_by_trace=True, 
-                               code_switch=True,
                                use_power_of_2=True,
-                               force=True, irreg=False, use_fft=False, use_nfft=False):
+                               force=True, irreg=False, use_fft=False, use_nfft=False,
+                               check_multiples=True):
     '''
         Wrapper of main algorithm to do all the post-processing
         
@@ -918,15 +632,11 @@ def fourier_poly_chi2_fit_full(times,
         in the least squares computation. Computation uses brute force trig sum O[N^2],
         which is faster than FFT small numbers of frequencies. 
         
-        code_switch = True uses a slightly modified version  of the code that reorders
-        the arrays leading to a 25% speedup. If it appears stable, change to default.
     '''
     fn = fourier_poly_chi2_fit
-    if code_switch:
-        fn = fourier_poly_chi2_fit_transpose
         
     if irreg:
-        fn = fourier_poly_chi2_fit_transpose_irreg
+        fn = fourier_poly_chi2_fit_irreg
         fft_kwargs = dict()
     else:
         freq_dict['Nf'] = next_power_of_2(freq_dict['Nf'])
@@ -995,6 +705,7 @@ def fourier_poly_chi2_fit_full(times,
     results['phases_diff'] = results['phases'][1:] - np.arange(2,len(results['phases'])+1)*results['phases'][0]
     results['phases_diff'] = results['phases_diff'] % (2.*np.pi)
     
+    ## Error at fixed period
     if np.all(np.isfinite(results['fourier_coeffs_cov'].flatten())):
         fg = np.random.multivariate_normal(results['fourier_coeffs'],
                                            results['fourier_coeffs_cov'],
@@ -1015,32 +726,51 @@ def fourier_poly_chi2_fit_full(times,
         results['phases_cov'] = np.nan * np.ones(
             (len(results['phases']), len(results['phases'])))
     
-    # Correction for sources with highest amplitude not in first term of expansion
-    if np.argmax(results['amplitudes'])!=0.:
-        freq_dict = dict(f0=1./(results['lsq_period'] / (1. + np.argmax(results['amplitudes']))),
-                        f1=200./(results['lsq_period'] / (1. + np.argmax(results['amplitudes']))),
-                        Nf=2)
-        double_result= fourier_poly_chi2_fit_full(times,
-                                           mag,
-                                           err,
-                                           freq_dict=freq_dict,
-                                           nterms=nterms,
-                                           npoly=npoly,
-                                           use_nfft=use_nfft, use_fft=use_fft,
-                                           regularization=regularization,
-                                           regularization_power=regularization_power,
-                                           time_zeropoint_poly=time_zeropoint_poly,
-                                           keep_small=keep_small,
-                                           regularize_by_trace=regularize_by_trace, 
-                                           code_switch=code_switch)
-        
-        dchiN=double_result['lsq_chi_squared']/len(times)
-        chiN=results['lsq_chi_squared']/len(times)
-        if dchiN-chiN<1.:
-            return double_result
-        
     results['ordering'] = 'new'
+    
+    if np.argmax(results['amplitudes'])>0 and check_multiples:
+        
+        chiN=results['lsq_chi_squared']
+        
+        freq_sep = np.diff(results['frequency_grid'])[0]
+        if freq_sep>1e-5:
+            freq_sep=1e-5
+        alt_result = results
+        best_chi=1e30
+        for ii in range(1,1 + np.argmax(results['amplitudes'])):
+            if (1 + np.argmax(results['amplitudes'])) % ii != 0:
+                continue
+            double_result= fourier_poly_chi2_fit_full(times,
+                                               mag,
+                                               err,
+                                               1./ii/(results['lsq_period'] / 
+                                                   (1. + np.argmax(results['amplitudes'])))-3.*freq_sep,
+                                               1./ii/(results['lsq_period'] / 
+                                                     (1. + np.argmax(results['amplitudes'])))+4.*freq_sep,
+                                               8,
+                                               nterms=nterms,
+                                               npoly=npoly,
+                                               use_nfft=False,
+                                               regularization=regularization,
+                                               regularization_power=regularization_power,
+                                               time_zeropoint_poly=time_zeropoint_poly,
+                                               keep_small=True,
+                                               regularize_by_trace=regularize_by_trace,
+                                               force=force, irreg=irreg, use_fft=use_fft, use_nfft=use_nfft,
+                                               check_multiples=False)
 
+            dchiN=double_result['lsq_chi_squared']
+
+            if dchiN<chiN and dchiN<best_chi:
+                alt_result = double_result
+                best_chi = dchiN
+                if not keep_small:
+                    for ii in ['chi_squared_grid', 'fourier_coeffs_grid',
+                                'inv_covariance_matrix', 'frequency_grid']:
+                        alt_result[ii]=results[ii]
+                        
+        return alt_result
+        
     if keep_small:
         for ii in [
                 'chi_squared_grid', 'fourier_coeffs_grid',
@@ -1049,6 +779,30 @@ def fourier_poly_chi2_fit_full(times,
             del results[ii]
 
     return results
+
+def fourier_poly_chi2_fit_nterms_iterations(times,
+                                            mag,
+                                            err,
+                                            freq_dict,
+                                            nterms_min,
+                                            nterms_max,
+                                            **kwargs):
+    
+    best_aic=1e300
+    best_nterms=None
+    results = {}
+    
+    for nterms in range(nterms_min, nterms_max+1):
+        kwargs['nterms'] = nterms
+        results[nterms] = fourier_poly_chi2_fit(times,mag,err,freq_dict,**kwargs)
+        # Each Fourier term contributes 2 dof
+        aic = (.5 * results[nterms]['lsq_chi_squared'] + 2 * nterms) * 2
+        ## Second check stops the solutions being highly oscillatory in the gaps in the data
+        if aic < best_aic and (~np.any(results[nterms]['amplitudes']>2.*np.diff(np.nanpercentile(mag,[5.,95.])))|(best_aic>1e299)):
+            best_aic = aic
+            best_nterms = nterms
+    
+    return results[best_nterms]
 
 
 def power_stats(power):
@@ -1081,7 +835,7 @@ def get_topN_freq(freq, power, N=30, tol=1e-3):
     while any(np.isclose(1./topN_freqs[_ind], alias_periods, rtol=0, atol=0.00009)):
         _ind+=1
     
-    ls_period, max_pow = 1./topN_freqs[_ind], topN_freqs[_ind]
+    ls_period, max_pow = 1./topN_freqs[_ind], topN_powrs[_ind]
     
     top_distinct_freqs = []
     while len(topN_freqs)>=1:
@@ -1136,7 +890,7 @@ def retrieve_fourier(phase, fourier_components):
     return np.dot(fourier_components, X)
 
 
-def retrieve_fourier_poly(times, results, with_var=False):
+def retrieve_fourier_poly(times, results, with_var=False, var_at_best_period=True):
     Kmax = results['lsq_nterms'] + 1
     npoly = results['lsq_npoly']
     period = results['lsq_period']
@@ -1155,13 +909,151 @@ def retrieve_fourier_poly(times, results, with_var=False):
     else:
         X = np.concatenate([ONES[:1], SCX, ONES[1:]])
     if with_var:
-        var = np.var(
-            np.random.multivariate_normal(results['fourier_coeffs'],
-                                          results['fourier_coeffs_cov'],
-                                          size=100),
-            axis=0)
-        return np.dot(results['fourier_coeffs'], X), np.dot(var, X)
+        cov = results['fourier_coeffs_cov'+'_incl_period_error'*(~var_at_best_period)]
+        full_cov = np.dot(X.T, np.dot(cov, X))
+        return np.dot(results['fourier_coeffs'], X), np.diag(full_cov)
     return np.dot(results['fourier_coeffs'], X)
+
+
+def retrieve_fourier_poly_firstderiv(times, results):
+    Kmax = results['lsq_nterms'] + 1
+    period = results['lsq_period']
+    SINX = np.array(
+        [k * (2.*np.pi/period) * np.cos(k * times / period * 2. * np.pi) for k in np.arange(1, Kmax)])
+    COSX = np.array(
+        [-k * (2.*np.pi/period) * np.sin(k * times / period * 2. * np.pi) for k in np.arange(1, Kmax)])
+    SCX = np.empty(((Kmax - 1) * 2, len(times)))
+    SCX[::2] = SINX
+    SCX[1::2] = COSX
+    return -np.dot(results['fourier_coeffs'][1:len(SCX)+1], SCX)
+
+def retrieve_fourier_poly_secondderiv(times, results):
+    Kmax = results['lsq_nterms'] + 1
+    period = results['lsq_period']
+    SINX = np.array(
+        [k**2 * (2.*np.pi/period)**2 * np.sin(k * times / period * 2. * np.pi) for k in np.arange(1, Kmax)])
+    COSX = np.array(
+        [k**2 * (2.*np.pi/period)**2 * np.cos(k * times / period * 2. * np.pi) for k in np.arange(1, Kmax)])
+    SCX = np.empty(((Kmax - 1) * 2, len(times)))
+    SCX[::2] = SINX
+    SCX[1::2] = COSX
+    return -np.dot(results['fourier_coeffs'][1:len(SCX)+1], SCX)
+
+def find_maximum_fourier(results):
+    phse = np.linspace(0.,1.,1000)
+    full_phase_curve = retrieve_fourier_poly(results['lsq_period'] * phse,results)
+    return np.min(full_phase_curve)
+
+def find_phase_of_minimum(results):
+    phse = np.linspace(0.,1.,1000)
+    full_phase_curve = retrieve_fourier_poly(results['lsq_period'] * phse,results)
+    return phse[np.argmax(full_phase_curve)] * results['lsq_period'] 
+
+def check_significant_second_minimum(results, min_phase, phase_range=[0.35,0.65], noise_thresh_factor=5, show_plot=False, return_min_location=False):
+    '''
+        Finds whether there is a minimum of depth > noise_thresh_factor * noise in the phase interval phase_range (normalized 0 to 1)
+        min_phase is the phase corresponding to absolute minimum of light curve (output from find_phase_minimum)
+    '''
+    
+    # Find location of all minima in phase_range and all maxima
+    phases = np.linspace(0.,1.,500)
+    first_deriv = retrieve_fourier_poly_firstderiv(np.ones(1)*(results['lsq_period'] * phases + min_phase), 
+                                                                   results)
+    turning_points = (first_deriv[1:]*first_deriv[:-1]<0)
+    mid_phases = .5 * (phases[1:]+phases[:-1])
+    sign_at_tp = np.sign(retrieve_fourier_poly_secondderiv(np.ones(1)*(results['lsq_period'] * mid_phases + min_phase), 
+                                                                   results))
+    minima = np.argwhere((sign_at_tp<0)&turning_points&(mid_phases>phase_range[0])&(mid_phases<phase_range[1]))
+    maxima = np.argwhere((sign_at_tp>0)&turning_points)
+    
+    # Find distance between minima and maxima so we can find the maxima that encompass minima
+    n = len(first_deriv) - 1
+    distance = ((minima[:,np.newaxis] - maxima[np.newaxis,:]) + n//2)%(n) - n//2
+    distance_positive, distance_negative = distance.copy(), distance.copy()
+    distance_positive[distance_positive<0]=n+1
+    distance_negative[distance_negative>0]=-(n+1)
+
+    fpoly, fpoly_var = retrieve_fourier_poly(np.ones(1)*(results['lsq_period'] * mid_phases + min_phase), 
+                                                                   results, with_var=True)
+    min_distance = np.hstack([np.argsort(distance_positive, axis=1)[:,:1,0],
+                                  np.argsort(-distance_negative, axis=1)[:,:1,0]])
+    if show_plot:
+        plt.plot(fpoly)
+        plt.plot(fpoly-noise_thresh_factor * np.sqrt(fpoly_var))
+        [plt.axvline(d) for d in minima]
+        [plt.axvline(d,color='r') for d in maxima[min_distance.flatten()]]
+
+    
+    # Check if minima depth > noise_thresh * noise
+    noise = np.sqrt(fpoly_var[minima])
+    is_there_second_minimum = np.any((fpoly[minima] - np.nanmean(fpoly[maxima[min_distance]],axis=1)).flatten()>noise_thresh_factor*noise.flatten())
+    
+    # Return location of minimum if required
+    if return_min_location:
+        if is_there_second_minimum:
+            min_loc = mid_phases[minima][np.argmax(fpoly[minima] - np.nanmean(fpoly[maxima[min_distance]],axis=1)).flatten()][0][0]
+            return is_there_second_minimum, min_loc
+        else:
+            return is_there_second_minimum, None
+    
+    return is_there_second_minimum
+
+def find_peak_ratio_model(results, min_phase, second_minimum, min_phase_2):
+        '''
+        Find the ratio of the minima depth (relative to 1st percentile of magnitude) using model.
+        First checks if there are significant secondary minima. If not every other primary minimum is compared (which will always return 1)
+        min_phase is the phase corresponding to absolute minimum of light curve (output from find_phase_minimum)
+        second_minimum, min_phase_2 is the output of check_significant_second_minimum
+    '''
+    ## Two minima per period
+    if second_minimum:
+        middle_min=retrieve_fourier_poly(np.ones(1)*(results['lsq_period'] * min_phase_2 + min_phase),results)[0]
+        first_min=retrieve_fourier_poly(np.ones(1)*min_phase,results)[0]
+        maxx = find_maximum_fourier(results)
+        if first_min>middle_min:
+            first_min, middle_min = middle_min, first_min
+        return (first_min-maxx)/(middle_min-maxx)
+    ## One minimum per period
+    else:
+        return 1.
+
+def find_peak_ratio(times,mag,errors,results, min_phase, second_minimum, min_phase_2,min_bin_size=0.05, Ndatapoints=3):
+    '''
+        Find the ratio of the minima depth (relative to 1st percentile of magnitude) using data.
+        First checks if there are significant secondary minima. If not every other primary minimum is compared.
+        The depth of the peak is governed by data within +/-bin_size phase around minima. bin_size is broadened until Ndatapoints are encompassed
+        min_phase is the phase corresponding to absolute minimum of light curve (output from find_phase_minimum)
+        second_minimum, min_phase_2 is the output of check_significant_second_minimum
+    '''
+    ## Find location of absolute minimum phase and detect if significant minimum
+    lc_min = np.nanpercentile(mag, 1.)
+    ## Two minima per period -- compare primary minimum and found significant secondary minimum
+    if second_minimum:
+        phases = ((times-min_phase) / results['lsq_period'] + min_bin_size) % 1
+        while (np.count_nonzero(phases < min_bin_size)<Ndatapoints) | \
+                (np.count_nonzero((phases > min_phase_2)&(phases < min_phase_2+min_bin_size))<Ndatapoints):
+            min_bin_size+=0.01
+            phases = ((times-min_phase) / results['lsq_period'] + min_bin_size) % 1
+        peak1 = np.nansum(((mag-lc_min)/errors**2)[phases < min_bin_size])/\
+                    np.nansum((1./errors**2)[phases < min_bin_size])
+        peak2 = np.nansum(((mag-lc_min)/errors**2)[(phases > min_phase_2)&(phases < min_phase_2+min_bin_size)])/\
+                    np.nansum((1./errors**2)[(phases > min_phase_2)&(phases < min_phase_2+min_bin_size)])
+    ## One minimum per period -- compare alternate primary minimum
+    else:
+        phases = ((times-min_phase) / (2. * results['lsq_period']) + min_bin_size) % 1
+        while (np.count_nonzero(phases < min_bin_size)<Ndatapoints) | \
+                (np.count_nonzero((phases > .5)&(phases < .5+min_bin_size))<Ndatapoints):
+            min_bin_size+=0.01
+            phases = ((lc[find_time_field(lc)]-min_phase) / (2. * results['lsq_period']) + min_bin_size) % 1
+        peak1 = np.nansum(((mag-lc_min)/errors**2)[phases < min_bin_size])/\
+                    np.nansum((1./errors**2)[phases < min_bin_size])
+        peak2 = np.nansum(((mag-lc_min)/errors**2)[(phases > .5)&(phases < .5+min_bin_size)])/\
+                    np.nansum((1./errors**2)[(phases > .5)&(phases < .5+min_bin_size)])
+    ## check peak ratio <=1
+    if peak1>peak2:
+        peak2, peak1 = peak1, peak2
+    return peak1/peak2
+        
 
 
 def get_delta_log_likelihood(y, yerr, pred_mean, free_var=False):

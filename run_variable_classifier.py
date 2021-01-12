@@ -14,6 +14,14 @@ def get_periodic_features_var(data, config, serial=True):
     """
     Periodic feature extracter - to be used for variable classification
     """
+    variable_output_dir = str(config['variable_output_dir'])
+    
+    if os.path.isfile(variable_output_dir+'variable_features_total.pkl'):
+        with open(variable_output_dir+'variable_features_total.pkl', 'rb') as f:
+            total_features = pickle.load(f)
+        
+        return total_features
+    
     print("Loading Timeseries data...")
     lcs = pd.DataFrame(sqlutil.get('''select sourceid, 
                                 unnest(mjdobs) as mjdobs,
@@ -37,7 +45,7 @@ def get_periodic_features_var(data, config, serial=True):
     # Add sky position of sources to be passed into periodic computation
     assert len(data)==len(uniq_ids)
     
-    assert all(np.diff(data['sourceid'].values, uniq_ids)==0)
+    assert all(data['sourceid'].values==uniq_ids)
 
     ras_full = data['ra'].values[inv_ids]
     decs_full = data['dec'].values[inv_ids]
@@ -55,46 +63,49 @@ def get_periodic_features_var(data, config, serial=True):
     # Universal frequency grid conditions 
     ls_kwargs = dict(maximum_frequency=np.float64(config['ls_max_freq']),
                      minimum_frequency=np.float64(config['ls_min_freq']))
-    method_kwargs = dict(irreg=False)
-    
-    variable_output_dir = str(config['variable_output_dir'])
+    method_kwargs = dict(irreg=True)
     
     #Extract features
-    step = len(lightcurves)//10
-    curr_start, curr_end = 0, step
-    batch_numb = 0
+    split = np.array_split(np.arange(len(lightcurves)), 10)
     total_features = pd.DataFrame()
-    while curr_end < len(lightcurves):
-        batch_features = extract_per_feats(lightcurves[curr_start:curr_end],
+    for batch_numb, indices in enumerate(split):
+        print('Running batch %i'%batch_numb)
+        batch_features = extract_per_feats(lightcurves[np.min(indices):np.max(indices)+1],
                                            data, ls_kwargs, method_kwargs,
                                            config, serial=serial)
         batch_features.to_pickle(variable_output_dir+'variable_features_batch{}.pkl'.format(batch_numb))
         total_features = pd.concat([total_features, batch_features])
-        batch_numb+=1
-        curr_start+=step
-        curr_end+=step
     
     total_features.to_pickle(variable_output_dir+'variable_features_total.pkl')
     
-    return features
+    return total_features
 
 
-save_cols = ['sourceid','ra','dec','l','b','ks_b_ivw_mean_mag',
-             'amp_0', 'amp_1', 'amp_2', 'amp_3', 
-             'amplitude', 'beyondfrac', 'delta_loglik', 
-             'ls_period', 'lsq_period',
-             'max_pow', 'max_time_lag', 'pow_mean_disp', 'time_lag_mean',
-             'phi_0','phi_1','phi_2','phi_3','JK_col','HK_col',
-             'class','prob']
+# save_cols = ['sourceid','ra','dec','l','b','ks_b_ivw_mean_mag',
+#              'amp_0', 'amp_1', 'amp_2', 'amp_3', 
+#              'amp_double_0', 'amp_double_1', 'amp_double_2', 'amp_double_3', 
+#              'amplitude', 'beyondfrac', 'delta_loglik', 
+#              'ls_period', 'lsq_period',
+#              'max_pow', 'max_time_lag', 'pow_mean_disp', 'time_lag_mean',
+#              'phi_0','phi_1','phi_2','phi_3',
+#              'JK_col','HK_col',
+#              'class','prob']
 
 save_cols_types = dict(zip(['amp_0', 'amp_1', 'amp_2', 'amp_3', 
+                 'amp_double_0', 'amp_double_1', 'amp_double_2', 'amp_double_3', 
                  'amplitude', 'beyondfrac', 'delta_loglik', 
-                 'ls_period', 'ls_period_error', 'lsq_period',
+                 'ls_period', #'ls_period_error', 
+                 'lsq_period',
                  'max_pow', 'max_time_lag', 'pow_mean_disp', 'time_lag_mean',
-                 'phi_0','phi_1','phi_2','phi_3','JK_col','HK_col','prob'],[np.float32]*20))
+                 'phi_0','phi_1','phi_2','phi_3',
+                 'phi_double_0','phi_double_1','phi_double_2','phi_double_3',
+                 'JK_col','HK_col','prob'],[np.float32]*29))
 
 def generate_secondstage_training(config):
     variable_stars = load_all_variable_stars(config)
+    variable_stars['gaia_sourceid']=-9999
+    variable_stars['gaia_sourceid'] = variable_stars['gaia_sourceid'].astype(np.int64)
+    
     constant_data = generate_gaia_training_set_random(len(variable_stars)//10, config,
                                                       np.float64(config['gaia_percentile']),
                                                       600000)
@@ -102,7 +113,9 @@ def generate_secondstage_training(config):
     constant_data['var_class']='CONST'
     
     trainset = pd.concat([variable_stars, constant_data], axis=0, sort=False).reset_index(drop=True)
-
+    
+    print(np.count_nonzero(trainset['sourceid'].duplicated()), 'duplicate sources')
+    
     trainset = trainset[~trainset['sourceid'].duplicated()].reset_index(drop=True)
     
     return trainset
@@ -110,26 +123,28 @@ def generate_secondstage_training(config):
 def generate_periodic_features(config):
     print("Loading trainset...")
     trainset = generate_secondstage_training(config)
+    #trainset[['sourceid', 'gaia_sourceid']].to_csv(str(config['variable_output_dir'])+'/variable_training_set_edr3_sourceid.csv',
+    #                              index=False)
     print("---Trainset loaded - {} stars".format(len(trainset)))
     print("Loading periodic features...")
     features = get_periodic_features_var(trainset, config, serial=False)
-
+    return features
 
 if __name__=="__main__":
     
     config = configuration()
     config.request_password()
- 
-    generate_periodic_features(config)
- 
-#     features= features[~features['error']].reset_index(drop=True)
+
+    features = generate_periodic_features(config)
+
+    features= features[~features['error']].reset_index(drop=True)
     
-#     classifier = variable_classification(features, config)
-        
-#     classifier.training_set.astype(save_cols_types).to_pickle(
-#         config['variable_output_dir'] + 'results%s.pkl'%(''+'_test'*int(config['test'])))
-#     del classifier.training_set
+    classifier = variable_classification(features, config)
     
-#     with open(config['variable_output_dir'] 
-#               + 'variable%s.pkl'%(''+'_test'*int(config['test'])), 'wb') as f:
-#         pickle.dump(classifier, f)
+    classifier.training_set.astype(save_cols_types).to_pickle(
+        config['variable_output_dir'] + 'variable_training_set%s.pkl'%(''+'_test'*int(config['test'])))
+    del classifier.training_set
+    
+    with open(config['variable_output_dir'] 
+              + 'variable_classifier%s.pkl'%(''+'_test'*int(config['test'])), 'wb') as f:
+        pickle.dump(classifier, f)

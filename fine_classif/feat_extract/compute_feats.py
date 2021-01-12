@@ -42,8 +42,40 @@ def magarr_stats(mags):
 
     return out
 
+def compute_peak_properties(times, mags, errors, results):
+    
+    min_phase = find_phase_of_minimum(results)
+    
+    second_minimum, min_phase_2 = check_significant_second_minimum(results, return_min_location=True)
+    
+    peak_ratio_model = find_peak_ratio_model(results, min_phase, second_minimum, min_phase_2)
+    peak_ratio_data = find_peak_ratio_data(times, mags, errors, results, min_phase, second_minimum, min_phase_2)
+    
+    # If no significant second minimum detected we also compute coefficients for the Fourier series at double the period
+    if ~second_minimum:
+        results_d = fourier_poly_chi2_fit_full(
+                                         times=times,
+                                         mag=mags,
+                                         err=errors,
+                                         f0=.5/results['lsq_period'],
+                                         f1=.50001/results['lsq_period'],
+                                         Nf=2,
+                                         nterms=results['lsq_nterms'],
+                                         npoly=results['lsq_npoly'],
+                                         regularization=results['lsq_regularization'])
+        amp_double, phase_double = results_d['amplitudes'], results_d['phases']
+    else:
+        amp_double, phase_double = results['amplitudes'], results['phases']
+        
+    return {'peak_ratio_model':peak_ratio_model, 'peak_ratio_data':peak_ratio_model, 
+            'significant_second_minimum':second_minimum, 
+            'amp_double_0':amp_double[0], 'amp_double_1':amp_double[1], 
+            'amp_double_2':amp_double[2],'amp_double_3':amps[3], 
+            'phi_double_0':phase_double[0], 'phi_double_1':phase_double[1], 
+            'phi_double_2':phase_double[2], 'phi_double_3':phase_double[3]}
+        
 
-def periodic_feats(times, mags, errors, nterms=4, npoly=1, max_freq=20.):
+def periodic_feats(times, mags, errors, nterms=4, nterms_max=10, npoly=1, max_freq=20.):
     """
     Returns periodic features (fourier components) of photometric lightcurves
     
@@ -63,13 +95,15 @@ def periodic_feats(times, mags, errors, nterms=4, npoly=1, max_freq=20.):
     
     #print("LSQ method: max_freq={}, min_freq={} -- with Nf={}".format(max_freq, f0, Nf))             
     
-    results = fourier_poly_chi2_fit_full(times=times,
+    results = fourier_poly_chi2_fit_full_nterms_iterations(
+                                         times=times,
                                          mag=mags,
                                          err=errors,
                                          f0=f0,
                                          f1=max_freq,
                                          Nf=Nf,
-                                         nterms=nterms,
+                                         nterms_min=nterms,
+                                         nterms_max=nterms_max,
                                          npoly=npoly,
                                          regularization=0.1,
                                          keep_small=True, 
@@ -88,23 +122,28 @@ def periodic_feats(times, mags, errors, nterms=4, npoly=1, max_freq=20.):
     # Dispersion of min chi2
     disp_min_chi2 = results['lsq_chi2_min_disp']
     
+    peak_output = compute_peak_properties(times, mags, errors, results)
+    
     return {'lsq_period':per, 'amp_0':amps[0], 'amp_1':amps[1], 'amp_2':amps[2],
             'amp_3':amps[3], 'phi_0':phases[0], 'phi_1':phases[1], 'phi_2':phases[2],
-            'phi_3':phases[3], 'delta_loglik':delta_loglik, 'disp_min_chi2':disp_min_chi2}
+            'phi_3':phases[3], 'delta_loglik':delta_loglik, 'disp_min_chi2':disp_min_chi2,
+            **peak_output}
 
 
 def periodic_feats_force(times, mags, errors, freq_dict,
-                         nterms=4, npoly=1,method_kwargs={}):
+                         nterms=4, nterms_max=10, npoly=1,method_kwargs={}):
     """
     Returns periodic features (fourier components) of photometric lightcurves
     with forced frequency input grid (determined from LombScargle).
     
     """
-    results = fourier_poly_chi2_fit_full(times=times,
+    results = fourier_poly_chi2_fit_nterms_iterations(
+                                         times=times,
                                          mag=mags,
                                          err=errors,
                                          freq_dict=freq_dict,
-                                         nterms=nterms,
+                                         nterms_min=nterms,
+                                         nterms_max=nterms_max,
                                          npoly=npoly,
                                          regularization=0.1,
                                          keep_small=True, 
@@ -123,9 +162,12 @@ def periodic_feats_force(times, mags, errors, freq_dict,
     per = float(results['lsq_period'])
     per_error = results['lsq_period_error']
     
+    peak_output = compute_peak_properties(times, mags, errors, results)
+    
     return {'lsq_period':per, 'lsq_period_error':per_error, 'amp_0':amps[0], 'amp_1':amps[1], 'amp_2':amps[2],
             'amp_3':amps[3], 'phi_0':phases[0], 'phi_1':phases[1], 'phi_2':phases[2],
-            'phi_3':phases[3], 'delta_loglik':delta_loglik}
+            'phi_3':phases[3], 'delta_loglik':delta_loglik,
+            **peak_output}
 
 def find_lag(times, period):
     """
@@ -202,6 +244,7 @@ def sigclipper(data, sig_thresh=4.):
     return data[np.abs(data['mag'].values - midd) / stdd < sig_thresh].reset_index(
         drop=True)
 
+
 def source_feat_extract(lc, config, ls_kwargs={}, method_kwargs={}):
     """
     Wrapper to extract all features for a given
@@ -226,7 +269,6 @@ def source_feat_extract(lc, config, ls_kwargs={}, method_kwargs={}):
     # Split source info
     ra, dec = lc['ra'].values[0], lc['dec'].values[0]
     sourceid = lc['sourceid'].values[0]
-    print(sourceid)
     
     # Correct MJD to HJD
     correct_to_HJD(lc, ra, dec)
@@ -255,8 +297,10 @@ def source_feat_extract(lc, config, ls_kwargs={}, method_kwargs={}):
        # Division into irregular grid input or not for lsq comp.
         if method_kwargs['irreg']:
             per_dict = lombscargle_stats(times, mags, errors, **ls_kwargs)
-            
-            freq_dict = dict(freq_grid=per_dict['top_distinct_freqs']) # Top N LS frequency grid
+            # Top N LS frequency grid and half multiple
+            freq_dict = dict(freq_grid=
+                             np.concatenate([.5*per_dict['top_distinct_freqs'],
+                                             per_dict['top_distinct_freqs']])) 
             per_feats = periodic_feats_force(times, mags, errors, freq_dict=freq_dict,
                                              nterms=nterms,npoly=npoly, method_kwargs=method_kwargs)
         else:

@@ -3,25 +3,29 @@ import numpy as np
 import pandas as pd
 import os
 import pickle
-from multiprocessing import Pool
+from multiprocessing import Pool, BoundedSemaphore
 from functools import partial
 from initial_classif.trainset.gaia_extraction import generate_gaia_training_set
 from initial_classif.trainset.variable_training_sets import load_all_variable_stars
 from initial_classif.classifier.classifier import binary_classification
 
+lock = BoundedSemaphore(4)
 
 def train_classification_region(grid, variable_stars, config, index):
     
     output_file = config['binary_output_dir'] + 'binary_%i%s.pkl'%(index,''+'_test'*int(config['test']))
+    output_file_training_set = config['binary_output_dir'] + 'binary_training_set_%i%s.pkl'%(index,''+'_test'*int(config['test']))
     if os.path.isfile(output_file) and int(config['overwrite'])==0:
         return
     
-    l,b,sizel,sizeb = grid[index]
-    print('Generating Gaia training set for (%s, %s)'%(l,b))
-    gaia = generate_gaia_training_set(l, b, sizel * 60., sizeb * 60., 
+    print('Generating Gaia training set for (%s, %s)'%(grid['l'].values[index], grid['b'].values[index]))
+    lock.acquire()
+    gaia = generate_gaia_training_set(grid['l'].values[index], grid['b'].values[index], 
+                                      grid['sizel'].values[index] * 60., grid['sizeb'].values[index] * 60., 
                                       np.float64(config['gaia_percentile']),
                                       len(variable_stars),
                                       config)
+    lock.release()
     gaia['detailed_var_class']='CONST'
     gaia['var_class']='CONST'
     
@@ -30,10 +34,14 @@ def train_classification_region(grid, variable_stars, config, index):
     
     full_data = pd.concat([variable_stars, gaia], axis=0, sort=False)
     
-    print('Running classifier for (%s, %s): %i stars'%(l,b,len(full_data)))
+    print('Running classifier for (%s, %s): %i stars'%(grid['l'].values[index], grid['b'].values[index],len(full_data)))
     
     classifier = binary_classification(full_data)
     
+    with open(output_file_training_set, 'wb') as f:
+        pickle.dump(classifier, f)
+        
+    del classifier.training_set
     with open(output_file, 'wb') as f:
         pickle.dump(classifier, f)
         
@@ -58,7 +66,8 @@ def run_loop(lstart, lend, bstart, bend,
     bulge_grid = make_grid(lstart, lend, bstart, bend, sizel, sizeb)
     disc_grid = make_grid(lstart_disc, lend_disc, bstart_disc, bend_disc, sizel, sizeb)
     
-    grid = pd.concat([bulge_grid, disc_grid], axis=0)
+    grid = pd.concat([bulge_grid, disc_grid], axis=0).reset_index(drop=True)
+    grid['index'] = np.arange(len(grid))
     
     grid.to_pickle(
         config['binary_output_dir'] + 'grid%s.pkl'%(''+'_test'*int(config['test']))

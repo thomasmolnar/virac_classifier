@@ -60,27 +60,16 @@ def construct_final_df(df_use):
     Finalise feature dataframe + include phases and amplitude unbiased features
     
     """
-    
-    # Taking amplitude ratios and phases differences after finding principal phases
-    phi0 = find_princ(df_use['phi_0'].values)
-    phi1 = find_princ(df_use['phi_1'].values)
-    phi2 = find_princ(df_use['phi_2'].values)
-    phi3 = find_princ(df_use['phi_3'].values)
-    
     # phase differences based on def phi_{ij} = phi_i - i phi_j
-    df_use['phi0_phi1'] = phi0-phi1
-    df_use['phi0_phi2'] = phi0-phi2
-    df_use['phi0_phi3'] = phi0-phi3
-    df_use['phi1_phi2'] = phi1-2*phi2
-    df_use['phi1_phi3'] = phi1-2*phi3
-    df_use['phi2_phi3'] = phi2-3*phi3
-    df_use['a0_a1'] = np.array(df_use['amp_0'])/np.array(df_use['amp_1'])
-    df_use['a0_a2'] = np.array(df_use['amp_0'])/np.array(df_use['amp_2'])
-    df_use['a0_a3'] = np.array(df_use['amp_0'])/np.array(df_use['amp_3'])
-    df_use['a1_a2'] = np.array(df_use['amp_1'])/np.array(df_use['amp_2'])
-    df_use['a1_a3'] = np.array(df_use['amp_1'])/np.array(df_use['amp_3'])
-    df_use['a2_a3'] = np.array(df_use['amp_2'])/np.array(df_use['amp_3'])
-
+    pairs = [[1,0],[2,0],[3,0],[2,1],[3,1],[3,2]]
+    for i, j in pairs:
+        df_use['phi%i_phi%i'%(i,j)] = find_princ((j+1)*df_use['phi_%i'%i].values
+                                                 -(i+1)*df_use['phi_%i'%j].values)
+        df_use['phi%i_phi%i_double'%(i,j)] = find_princ((j+1)*df_use['phi_double_%i'%i].values
+                                                        -(i+1)*df_use['phi_double_%i'%j].values)
+        
+        df_use['a%i_a%i'%(j,i)] = df_use['amp_%i'%j].values/df_use['amp_%i'%i].values
+        df_use['a%i_a%i_double'%(j,i)] = df_use['amp_double_%i'%j].values/df_use['amp_double_%i'%i].values
 
 def finalise_feats(features_df, input_df, config):
     """

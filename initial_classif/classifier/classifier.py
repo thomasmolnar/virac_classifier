@@ -69,6 +69,7 @@ def plot_imp(imp_dict, plot_name):
     fig.savefig(plot_name + '_imp.png')
     return plt
 
+
 class classification(object):
     
     def train_feat_clip(self, df, impute=True, Nsigma=10):
@@ -80,16 +81,23 @@ class classification(object):
 #         with np.errstate(invalid='ignore'):
 #             df[self.log_transform_cols] = np.log(df[self.log_transform_cols])
             
+        for i in self.periodic_features:
+            df[i + '_x'] = np.cos(df[i])
+            df[i + '_y'] = np.sin(df[i])
+            
         df[self.data_cols + self.target_cols] = df[self.data_cols + self.target_cols].replace([np.inf, -np.inf], np.nan)
         
         self.ptransformer = PowerTransformer()
         with np.errstate(invalid='ignore'):
-            df[self.log_transform_cols] = self.ptransformer.fit_transform(df[self.log_transform_cols])
+            df[self.log_transform_cols] = self.ptransformer.fit_transform(df[self.log_transform_cols].astype(np.float64)).astype(np.float32)
         
         self.upper_lower_clips = {}
         fltr = [True]*len(df)
 
-        for i in self.data_cols:
+        ## Don't clip periodic features
+        for i in list(set(self.data_cols) - 
+                        set([s + '_x' for s in self.periodic_features]) - 
+                          set([s + '_y' for s in self.periodic_features])):
             eff_sigma = .25*np.diff(np.nanpercentile(df[i], [5., 95.]))[0]
             eff_median = np.nanpercentile(df[i], 50.)
             bot, top = eff_median-Nsigma*eff_sigma, eff_median+Nsigma*eff_sigma
@@ -214,6 +222,8 @@ class binary_classification(classification):
                            "ks_p100_p0_over_error","ks_p99_p1_over_error",
                            "ks_p95_p5_over_error","ks_p84_p16_over_error","ks_p75_p25_over_error"
                          ]
+        
+        self.periodic_features = None
         
         self.target_cols = ['var_class']
         
