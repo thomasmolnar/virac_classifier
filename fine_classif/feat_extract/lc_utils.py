@@ -185,7 +185,7 @@ def fourier_poly_chi2_fit(times,
     magw = inverr2 * mag
     magws = np.sum(magw)
 
-    if 'f0' in freq_dict:
+    if 'f0' in freq_dict.keys():
         f0, f1, Nf = freq_dict['f0'], freq_dict['f1'], freq_dict['Nf']
         freq_grid = np.linspace(f0, f1, Nf)
         df = (f1 - f0) / (Nf - 1)
@@ -440,7 +440,7 @@ def fourier_poly_chi2_fit_full(times,
                                keep_small=True,
                                regularize_by_trace=True, 
                                use_power_of_2=True,
-                               force=True, irreg=False, use_fft=False, use_nfft=False,
+                               force=True, use_fft=False, use_nfft=False,
                                check_multiples=True):
     '''
         Wrapper of main algorithm to do all the post-processing
@@ -465,17 +465,14 @@ def fourier_poly_chi2_fit_full(times,
     '''
     fn = fourier_poly_chi2_fit
         
-    if irreg:
-        fn = fourier_poly_chi2_fit_irreg
-        fft_kwargs = dict()
-    else:
+    if 'Nf' in freq_dict.keys():
         freq_dict['Nf'] = next_power_of_2(freq_dict['Nf'])
         assert freq_dict['Nf'] % 2 == 0 ## Nf must be even
-        fft_kwargs = dict(use_nfft=use_nfft, use_fft=use_fft)
     
     results = fn(times,
                                     mag,
                                     err,
+                                    freq_dict,
                                     nterms=nterms,
                                     normalization="chi2",
                                     npoly=npoly,
@@ -483,7 +480,7 @@ def fourier_poly_chi2_fit_full(times,
                                     regularization_power=regularization_power,
                                     time_zeropoint_poly=time_zeropoint_poly,
                                     regularize_by_trace=regularize_by_trace,
-                                    **freq_dict, **fft_kwargs)
+                                    use_fft=use_fft, use_nfft=use_nfft)
     
     results['chi_squared_grid'] = results.pop('power')
     
@@ -508,8 +505,9 @@ def fourier_poly_chi2_fit_full(times,
         disp_min = results['lsq_chi_squared']/np.mean(results['chi_squared_grid'])
         results['lsq_chi2_min_disp'] = disp_min
     
-    # Period/Frequency error estimate based on curvature of chi2 surface
-    if irreg:
+    # Period/Frequency error estimate based on curvature of chi2 surface 
+    # -- for irregular grid no guarantee that grid is fine enough to well approximate chi2 around minimum
+    if 'Nf' not in freq_dict.keys():
         baseline = times.max() - times.min()
         df = 0.2 / baseline
         top_freq = results['frequency_grid'][argc]
@@ -624,7 +622,7 @@ def fourier_poly_chi2_fit_nterms_iterations(times,
     
     for nterms in range(nterms_min, nterms_max+1):
         kwargs['nterms'] = nterms
-        results[nterms] = fourier_poly_chi2_fit(times,mag,err,freq_dict,**kwargs)
+        results[nterms] = fourier_poly_chi2_fit_full(times,mag,err,freq_dict,**kwargs)
         # Each Fourier term contributes 2 dof
         aic = (.5 * results[nterms]['lsq_chi_squared'] + 2 * nterms) * 2
         ## Second check stops the solutions being highly oscillatory in the gaps in the data
