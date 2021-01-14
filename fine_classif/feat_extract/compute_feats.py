@@ -42,6 +42,18 @@ def magarr_stats(mags):
 
     return out
 
+def optimum_regularization(mags, errors):
+    '''
+    Appropriate for use with regularize_by_trace = True and regularization_power=2
+    '''
+    
+    p5_p95 = np.diff(np.nanpercentile(mags,[5.,95.]))[0]
+    noise = np.nanmean(errors)
+    
+    N = len(mags)
+    
+    return np.min([0.25, 2./(p5_p95/noise)**3/(N/100)])
+
 def compute_peak_properties(times, mags, errors, results):
     
     min_phase = find_phase_of_minimum(results)
@@ -104,7 +116,7 @@ def periodic_feats(times, mags, errors, nterms=4, nterms_max=10, npoly=1, max_fr
                                          nterms_min=nterms,
                                          nterms_max=nterms_max,
                                          npoly=npoly,
-                                         regularization=0.1,
+                                         regularization=optimum_regularization(mags, errors),
                                          keep_small=True, 
                                          code_switch=True,
                                          use_power_of_2=True, force=False)
@@ -144,7 +156,7 @@ def periodic_feats_force(times, mags, errors, freq_dict,
                                          nterms_min=nterms,
                                          nterms_max=nterms_max,
                                          npoly=npoly,
-                                         regularization=0.1,
+                                         regularization=optimum_regularization(mags, errors),
                                          keep_small=True, 
                                          code_switch=True,
                                          use_power_of_2=True,
