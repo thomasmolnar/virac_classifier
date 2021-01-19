@@ -81,7 +81,7 @@ def finalise_feats(features_df, input_df, config):
     """
     
     # Merge with input stats df
-    df_match = features_df.merge(right=input_df, how='inner', on='sourceid').dropna(subset=['sourceid'])
+    df_match = features_df.merge(right=input_df, how='inner', on='sourceid', suffixes=('', 'old_trainset')).dropna(subset=['sourceid'])
     
     # Add reddening free colour info
     add_colour_info(df_match, config)

@@ -3,6 +3,8 @@ import numpy as np
 import pandas as pd
 import math
 
+import time as tt
+
 from astropy import time, coordinates as coord, units as u
 from astropy.coordinates import SkyCoord
 
@@ -57,8 +59,8 @@ def optimum_regularization(mags, errors):
 def compute_peak_properties(times, mags, errors, results):
     
     min_phase = find_phase_of_minimum(results)
-    
-    second_minimum, min_phase_2 = check_significant_second_minimum(results, return_min_location=True)
+        
+    second_minimum, min_phase_2 = check_significant_second_minimum(results, min_phase, return_min_location=True)
     
     peak_ratio_model = find_peak_ratio_model(results, min_phase, second_minimum, min_phase_2)
     peak_ratio_data = find_peak_ratio_data(times, mags, errors, results, min_phase, second_minimum, min_phase_2)
@@ -80,15 +82,16 @@ def compute_peak_properties(times, mags, errors, results):
     else:
         amp_double, phase_double = results['amplitudes'], results['phases']
         
-    return {'peak_ratio_model':peak_ratio_model, 'peak_ratio_data':peak_ratio_model, 
+    return {'peak_ratio_model':peak_ratio_model, 'peak_ratio_data':peak_ratio_data, 
             'significant_second_minimum':second_minimum, 
             'amp_double_0':amp_double[0], 'amp_double_1':amp_double[1], 
-            'amp_double_2':amp_double[2],'amp_double_3':amps[3], 
+            'amp_double_2':amp_double[2],'amp_double_3':amp_double[3], 
             'phi_double_0':phase_double[0], 'phi_double_1':phase_double[1], 
-            'phi_double_2':phase_double[2], 'phi_double_3':phase_double[3]}
+            'phi_double_2':phase_double[2], 'phi_double_3':phase_double[3],
+           }
         
 
-def periodic_feats(times, mags, errors, nterms=4, nterms_max=10, npoly=1, max_freq=20.):
+def periodic_feats(times, mags, errors, nterms_min=4, nterms_max=10, npoly=1, max_freq=20.):
     """
     Returns periodic features (fourier components) of photometric lightcurves
     
@@ -106,14 +109,12 @@ def periodic_feats(times, mags, errors, nterms=4, nterms_max=10, npoly=1, max_fr
     else:
         Nf += 1
     
-    #print("LSQ method: max_freq={}, min_freq={} -- with Nf={}".format(max_freq, f0, Nf))             
-    
     results = fourier_poly_chi2_fit_full_nterms_iterations(
                                          times=times,
                                          mag=mags,
                                          err=errors,
-                                         freq_dict = {'f0':f0, 'f1':f1, 'Nf':Nf}
-                                         nterms_min=nterms,
+                                         freq_dict = {'f0':f0, 'f1':f1, 'Nf':Nf},
+                                         nterms_min=nterms_min,
                                          nterms_max=nterms_max,
                                          npoly=npoly,
                                          regularization=optimum_regularization(mags, errors),
@@ -124,6 +125,7 @@ def periodic_feats(times, mags, errors, nterms=4, nterms_max=10, npoly=1, max_fr
     # Calculate delta log likelihood between periodic and constant Gaussian scatter models
     pred_mean = retrieve_fourier_poly(times=times, results=results)
     delta_loglik = get_delta_log_likelihood(mags, errors, pred_mean=pred_mean)
+    peak_output = compute_peak_properties(times, mags, errors, results)
     
     # Extract relevant Fourier terms
     amps = np.array(results['amplitudes'])
@@ -133,8 +135,6 @@ def periodic_feats(times, mags, errors, nterms=4, nterms_max=10, npoly=1, max_fr
     # Dispersion of min chi2
     disp_min_chi2 = results['lsq_chi2_min_disp']
     
-    peak_output = compute_peak_properties(times, mags, errors, results)
-    
     return {'lsq_period':per, 'amp_0':amps[0], 'amp_1':amps[1], 'amp_2':amps[2],
             'amp_3':amps[3], 'phi_0':phases[0], 'phi_1':phases[1], 'phi_2':phases[2],
             'phi_3':phases[3], 'delta_loglik':delta_loglik, 'disp_min_chi2':disp_min_chi2,
@@ -142,23 +142,23 @@ def periodic_feats(times, mags, errors, nterms=4, nterms_max=10, npoly=1, max_fr
 
 
 def periodic_feats_force(times, mags, errors, freq_dict,
-                         nterms=4, nterms_max=10, npoly=1,method_kwargs={}):
+                         nterms_min=4, nterms_max=10, npoly=1, method_kwargs={}):
     """
     Returns periodic features (fourier components) of photometric lightcurves
     with forced frequency input grid (determined from LombScargle).
     
     """
+    
     results = fourier_poly_chi2_fit_nterms_iterations(
                                          times=times,
                                          mag=mags,
                                          err=errors,
                                          freq_dict=freq_dict,
-                                         nterms_min=nterms,
+                                         nterms_min=nterms_min,
                                          nterms_max=nterms_max,
                                          npoly=npoly,
                                          regularization=optimum_regularization(mags, errors),
-                                         keep_small=True, 
-                                         code_switch=True,
+                                         keep_small=True,
                                          use_power_of_2=True,
                                          force=True,
                                          **method_kwargs)
@@ -166,15 +166,14 @@ def periodic_feats_force(times, mags, errors, freq_dict,
     # Calculate delta log likelihood between periodic and constant Gaussian scatter models
     pred_mean = retrieve_fourier_poly(times=times, results=results)
     delta_loglik = get_delta_log_likelihood(mags, errors, pred_mean=pred_mean)
+    peak_output = compute_peak_properties(times, mags, errors, results)
     
     # Extract relevant Fourier terms
     amps = np.array(results['amplitudes'])
     phases = np.array(results['phases'])
     per = float(results['lsq_period'])
     per_error = results['lsq_period_error']
-    
-    peak_output = compute_peak_properties(times, mags, errors, results)
-    
+        
     return {'lsq_period':per, 'lsq_period_error':per_error, 
             'amp_0':amps[0], 'amp_1':amps[1], 'amp_2':amps[2], 'amp_3':amps[3], 
             'phi_0':phases[0], 'phi_1':phases[1], 'phi_2':phases[2], 'phi_3':phases[3], 
@@ -196,7 +195,6 @@ def find_lag(times, period):
     # Calculate summary statistics of difference array
     t_max = np.nanmax(times_fld_diff)
     mean = np.nanmean(times_fld_diff)
-    median = np.nanmedian(times_fld_diff)
     sd = np.nanstd(times_fld_diff)
     
     # Dispersion of max
@@ -277,6 +275,8 @@ def source_feat_extract(lc, config, ls_kwargs={}, method_kwargs={}):
     ['sourceid' 'mjdobs' 'mag' 'error' 'ambiguous_match' 'ast_res_chisq' 'chi']
     
     """
+    tot_s = tt.time()
+    pp_s = tt.time()
     # Split source info
     ra, dec = lc['ra'].values[0], lc['dec'].values[0]
     sourceid = lc['sourceid'].values[0]
@@ -294,42 +294,59 @@ def source_feat_extract(lc, config, ls_kwargs={}, method_kwargs={}):
     if len(lc_clean)<=int(config['n_detection_threshold']):
         return {'sourceid':sourceid, 'error':True}
     
+    pp_time = tt.time()-pp_s
+    
     # Timeseries data
-    nterms, npoly = int(config['nterms']), int(config['npoly'])
+    nterms_min, nterms_max = int(config['nterms_min']), int(config['nterms_max'])
+    npoly = int(config['npoly'])
     times = np.array(lc_clean.HJD.values)
     mags = np.array(lc_clean.mag.values)
     errors = np.array(lc_clean.emag.values)
                  
-    # Extract non-periodic statistics 
-    nonper_feats = magarr_stats(mags)    
+    # Extract non-periodic statistics
+    np_s = tt.time()
+    nonper_feats = magarr_stats(mags)
+    np_time = tt.time()-np_s
                  
     # Division into forced frequency grid input or not for lsq comp.
     if int(config['force_method']):
-       # Division into irregular grid input or not for lsq comp.
+       # Division into irregular grid input for LSQ computation 
         if method_kwargs['irreg']:
+            ls_s = tt.time()
             per_dict = lombscargle_stats(times, mags, errors, **ls_kwargs)
             # Top N LS frequency grid and half multiple
+            freqs = np.array(per_dict['top_distinct_freqs'])
             freq_dict = dict(freq_grid=
-                             np.concatenate([.5*per_dict['top_distinct_freqs'],
-                                             per_dict['top_distinct_freqs']])) 
+                             np.concatenate((.5*freqs,freqs))) 
+            ls_time = tt.time()-ls_s
+            
+            lsq_s = tt.time()
             per_feats = periodic_feats_force(times, mags, errors, freq_dict=freq_dict,
-                                             nterms=nterms,npoly=npoly, method_kwargs=method_kwargs)
+                                             nterms_min=nterms_min, nterms_max=nterms_max,
+                                             npoly=npoly, method_kwargs={})
+            lsq_time = tt.time()-lsq_s
         else:
             per_dict = lombscargle_stats(times, mags, errors, irreg=False, **ls_kwargs)
             
             period = per_dict['ls_period']
             freq_dict = dict(f0=1./(2*period), f1=1./period, Nf=2) # Forced frequency grid
             per_feats = periodic_feats_force(times, mags, errors, freq_dict=freq_dict,
-                                             nterms=nterms,npoly=npoly, method_kwargs=method_kwargs)
+                                             nterms_min=nterms_min, nterms_max=nterms_max,
+                                             npoly=npoly, method_kwargs={})
         
+        lag_s = tt.time()
         lag_feats = find_lag(times, period=per_dict['ls_period'])
-        features = {'sourceid':sourceid, **per_feats, **per_dict, **nonper_feats, **lag_feats}
+        lag_time = tt.time()-lag_s
+        
+        times = dict(pp_time=pp_time, np_time=np_time, ls_time=ls_time, lsq_time=lsq_time, lag_time=lag_time)
+        features = {'sourceid':sourceid, **per_feats, **per_dict, **nonper_feats, **lag_feats, **times}
         
     else:
-        per_feats = periodic_feats(times, mags, errors, nterms, npoly)
+        per_feats = periodic_feats(times, mags, errors, nterms_min, nterms_max, npoly)
         lag_feats = find_lag(times, period=per_feats['lsq_period'])
         
         features = {'sourceid':sourceid, 
                     **per_feats, **nonper_feats, **lag_feats}
-
+    
+    print('%s feats loaded in %s s'%(sourceid, tt.time()-tot_s))
     return features
