@@ -499,12 +499,11 @@ def lsq_fit_find_uncertainties(results, argc):
                                        2 * results['chi_squared_grid'][argc]) /
                                       df**2)
     if results['lsq_freq_error'] < 0.:
-        results['lsq_freq_error'] = 0.
+        results['lsq_period_error'] = 0.
     else:
-        results['lsq_freq_error'] = np.sqrt(results['lsq_freq_error'])
-        
-    results['lsq_period_error'] = results['lsq_freq_error'] * results['lsq_period'] ** 2
-    
+        lsq_freq_error = np.sqrt(results['lsq_freq_error'])
+        results['lsq_period_error'] = lsq_freq_error/(results['frequency_grid'][argc]**2)
+
     gradientA = (results['fourier_coeffs_grid'][argc + 1] -
                  results['fourier_coeffs_grid'][argc - 1]) / (2 * df)
     gradientA *= results['lsq_freq_error']
@@ -542,7 +541,7 @@ def lsq_uncertainties_irreg(times, mag, err, top_freq, **kwargs):
                                        2 * temp_results['chi_squared_grid'][1]) /
                                       df**2)
     if lsq_freq_error < 0.:
-        lsq_period_error = np.nan
+        lsq_period_error = 0.
     else:
         lsq_freq_error = np.sqrt(lsq_freq_error)
         lsq_period_error = lsq_freq_error/(top_freq**2)
@@ -659,15 +658,19 @@ def fourier_poly_chi2_fit_full(times,
     results = build_bestfit_output_dictionary(results, freq_dict)
     
     if np.argmax(results['amplitudes'])>0 and check_multiples:
-        
+
         df = get_delta_freq(times)
         alt_result = results.copy()
         best_chi=1e30
+        
         for ii in range(1,1 + np.argmax(results['amplitudes'])):
+            
             if (1 + np.argmax(results['amplitudes'])) % ii != 0:
                 continue
+                
             double_freq_dict = {"freq_grid": 1./ii/(results['lsq_period'] / 
                                       (1. + np.argmax(results['amplitudes']))) + np.array([-df,0.,df])}
+            
             double_result= fourier_poly_chi2_fit_full(times,mag,err, double_freq_dict,
                                                        use_power_of_2=False,
                                                        check_multiples=False, 
@@ -695,22 +698,26 @@ def fourier_poly_chi2_fit_nterms_iterations(times,
                                             use_bic=False,
                                             **kwargs):
     
-    best_aic=1e300
-    best_nterms=None
+    best_aic = 1e300
+    best_nterms = None
     results = {}
-    
+        
     for nterms in range(nterms_min, nterms_max+1):
+        
         kwargs['nterms'] = nterms
+        
         results[nterms] = fourier_poly_chi2_fit_full(times, mag, err, freq_dict, **kwargs)
         # Each Fourier term contributes 2 dof
         aic = (.5 * results[nterms]['lsq_chi_squared'] + 2 * nterms) * 2
+        
         if use_bic:
             aic = results[nterms]['lsq_chi_squared'] + np.log(len(mag)) * (2 * nterms)
+            
         ## Second check stops the solutions being highly oscillatory in the gaps in the data
         if aic < best_aic and (~np.any(results[nterms]['amplitudes']>2.*np.diff(np.nanpercentile(mag,[5.,95.])))|(best_aic>1e299)):
             best_aic = aic
             best_nterms = nterms
-    
+            
     return results[best_nterms]
 
 
@@ -822,11 +829,15 @@ def retrieve_fourier(phase, fourier_components):
     return np.dot(fourier_components, X)
 
 
-def retrieve_fourier_poly(times, results, with_var=False, var_at_best_period=True):
+def retrieve_fourier_poly(times, results, phase_min=None, with_var=False, var_at_best_period=True):
     Kmax = results['lsq_nterms'] + 1
     npoly = results['lsq_npoly']
     period = results['lsq_period']
-    time_zeropoint_poly = results['lsq_time_zeropoint_poly']
+    if phase_min==None:
+        time_zeropoint_poly = results['lsq_time_zeropoint_poly']
+    else: 
+        time_zeropoint_poly = phase_min
+        
     SINX = np.array(
         [np.sin(k * times / period * 2. * np.pi) for k in np.arange(1, Kmax)])
     COSX = np.array(
@@ -843,6 +854,7 @@ def retrieve_fourier_poly(times, results, with_var=False, var_at_best_period=Tru
         cov = results['fourier_coeffs_cov'+'_incl_period_error'*(~var_at_best_period)]
         full_cov = np.dot(X.T, np.dot(cov, X))
         return np.dot(results['fourier_coeffs'], X), np.diag(full_cov)
+    
     return np.dot(results['fourier_coeffs'], X)
 
 
@@ -883,9 +895,9 @@ def find_phase_of_minimum(results):
     phse = np.linspace(0.,1.,1000)
     full_phase_curve = retrieve_fourier_poly(results['lsq_period'] * phse + integer_periods(results['lsq_time_zeropoint_poly'], results), 
                                              results)
-    return phse[np.argmax(full_phase_curve)]
+    return np.max(full_phase_curve)
 
-def check_significant_second_minimum(results, min_phase, phase_range=[0.35,0.65], noise_thresh_factor=5, show_plot=False, return_min_location=False):
+def check_significant_second_minimum(results, min_phase, phase_range=[0.35,0.65], noise_thresh_factor=7., show_plot=False, return_min_location=False):
     '''
         Finds whether there is a minimum of depth > noise_thresh_factor * noise in the phase interval phase_range (normalized 0 to 1)
         Depth is determined by minimum separation from nearby maxima
@@ -911,19 +923,20 @@ def check_significant_second_minimum(results, min_phase, phase_range=[0.35,0.65]
     fpoly, fpoly_var = retrieve_fourier_poly(results['lsq_period'] * (mid_phases + min_phase)
                                              + integer_periods(results['lsq_time_zeropoint_poly'], results), 
                                                        results, with_var=True)
+    
     min_distance = np.hstack([np.argsort(distance_positive, axis=1)[:,:1,0],
                                   np.argsort(-distance_negative, axis=1)[:,:1,0]])
+    
     if show_plot:
         plt.plot(fpoly)
         plt.plot(fpoly-noise_thresh_factor * np.sqrt(fpoly_var))
         [plt.axvline(d) for d in minima]
         [plt.axvline(d,color='r') for d in maxima[min_distance.flatten()]]
-
     
     # Check if minima depth > noise_thresh * noise
     noise = np.sqrt(fpoly_var[minima])
     is_there_second_minimum = np.any((fpoly[minima] - np.nanmax(fpoly[maxima[min_distance]],axis=1)).flatten()>noise_thresh_factor*noise.flatten())
-    
+
     # Return location of minimum if required
     if return_min_location:
         if is_there_second_minimum:
@@ -933,6 +946,7 @@ def check_significant_second_minimum(results, min_phase, phase_range=[0.35,0.65]
             return is_there_second_minimum, None
     
     return is_there_second_minimum
+                
 
 def find_peak_ratio_model(results, min_phase, second_minimum, min_phase_2):
     '''
@@ -941,6 +955,7 @@ def find_peak_ratio_model(results, min_phase, second_minimum, min_phase_2):
         min_phase is the phase corresponding to absolute minimum of light curve (output from find_phase_minimum)
         second_minimum, min_phase_2 is the output of check_significant_second_minimum
     '''
+    
     ## Two minima per period
     if second_minimum:
         middle_min=retrieve_fourier_poly(np.ones(1) * results['lsq_period'] * (min_phase_2 + min_phase)
