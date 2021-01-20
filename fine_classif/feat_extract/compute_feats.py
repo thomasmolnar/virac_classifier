@@ -138,6 +138,7 @@ def periodic_feats(times, mags, errors, nterms_min=4, nterms_max=10, npoly=1, ma
     lsq_power = 1 - results['lsq_chi_squared'] / results['chi2_ref']
     
     return {'lsq_period':per, 'delta_loglik':delta_loglik, 'lsq_power':lsq_power,
+            'lsq_nterms':results['lsq_nterms'],
             **amps, **phases, **peak_output}
 
 
@@ -158,7 +159,8 @@ def periodic_feats_force(times, mags, errors, freq_dict,
                  nterms_max=nterms_max,
                  npoly=npoly,
                  regularization=optimum_regularization(mags, errors),
-                 use_power_of_2=True)
+                 use_power_of_2=True,
+                 use_bic=False)
     
     # Calculate delta log likelihood between periodic and constant Gaussian scatter models
     pred_mean = retrieve_fourier_poly(times=times, results=results)
@@ -177,6 +179,7 @@ def periodic_feats_force(times, mags, errors, freq_dict,
     
     return {'lsq_period':per, 'lsq_period_error':per_error, 
             'delta_loglik':delta_loglik, 'lsq_power': lsq_power,
+            'lsq_nterms':results['lsq_nterms'],
             **amps, **phases, **peak_output}
 
 def find_lag(times, period):

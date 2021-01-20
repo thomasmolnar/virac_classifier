@@ -15,7 +15,7 @@ class variable_classification(classification):
                            "ks_p95_p5_over_error","ks_p84_p16_over_error","ks_p75_p25_over_error",
                            'amp_0', 'amp_1', 'amp_2', 'amp_3', 
                            'amplitude', 'beyondfrac', 'delta_loglik', 'lsq_period',
-                           'max_pow', 'max_time_lag', 'pow_mean_disp', 'time_lag_mean',
+                           'max_pow', 'max_time_lag', 'pow_mean_disp', 'time_lag_mean', 'log10_fap',
                            'phi0_phi1_x','phi0_phi2_x','phi0_phi3_x', 
                            'phi1_phi2_x', 'phi1_phi3_x', 'phi2_phi3_x',
                            'phi0_phi1_y','phi0_phi2_y','phi0_phi3_y', 
@@ -46,7 +46,7 @@ class variable_classification(classification):
                                    'amp_0', 'amp_1', 'amp_2', 'amp_3', 
                                    'amp_double_0', 'amp_double_1', 'amp_double_2', 'amp_double_3', 
                                    'lsq_period',
-                                   'amplitude', 'beyondfrac',
+                                   'amplitude', 'beyondfrac', 'log10_fap',
                                    'max_pow', 'max_time_lag', 'pow_mean_disp', 'time_lag_mean',
                                    'a0_a1', 'a0_a2', 'a0_a3', 'a1_a2', 'a1_a3', 'a2_a3',
                                    'a0_a1_double', 'a0_a2_double', 'a0_a3_double', 'a1_a2_double', 'a1_a3_double', 'a2_a3_double']

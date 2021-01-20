@@ -531,15 +531,18 @@ def lsq_uncertainties_irreg(times, mag, err, top_freq, **kwargs):
     freq_dict = dict(freq_grid=[top_freq-df, top_freq, top_freq+df])
         
     temp_results = fourier_poly_chi2_fit(times, mag, err, freq_dict, normalization="chi2", **kwargs)
-    
+
     # Estimate error from chi2 curvature
-    df = np.diff(freq_dict['freq_grid'])[0]
+    s_deriv = (temp_results['chi_squared_grid'][0] + temp_results['chi_squared_grid'][2] -
+                2 * temp_results['chi_squared_grid'][1])
+    
     top_freq = freq_dict['freq_grid'][1]
-    lsq_freq_error = 1. / (.5 *
-                                      (temp_results['chi_squared_grid'][0] +
-                                       temp_results['chi_squared_grid'][2] -
-                                       2 * temp_results['chi_squared_grid'][1]) /
-                                      df**2)
+    
+    if s_deriv!=0.:
+        lsq_freq_error = 1. / (.5 * s_deriv / df**2)
+    else:
+        lsq_freq_error = 0.
+        
     if lsq_freq_error < 0.:
         lsq_period_error = 0.
     else:
@@ -769,15 +772,15 @@ def get_topN_freq(freq, power, N=30, tol=1e-3):
     return dict(ls_period=ls_period, max_pow=max_pow, top_distinct_freqs=np.array(top_distinct_freqs),
                 top_distinct_freq_power=np.array(top_distinct_freq_power))
 
-def is_window_function_peak(times, mags, errors, freqs, power, NW=5):
+# def is_window_function_peak(times, mags, errors, freqs, power, NW=5):
     
-    model = LombScargle(times,
-                    np.ones_like(times),
-                    errors,
-                    center_data=False, fit_mean=False
-                    )
-    power_window = model.power(freqs)
-    return power_window>power*0.5
+#     model = LombScargle(times,
+#                     np.ones_like(times),
+#                     errors,
+#                     center_data=False, fit_mean=False
+#                     )
+#     power_window = model.power(freqs)
+#     return power_window>power*10000.5
 
 def lombscargle_stats(times, mags, errors, N=30, irreg=True, **ls_kwargs):
     """
@@ -797,12 +800,13 @@ def lombscargle_stats(times, mags, errors, N=30, irreg=True, **ls_kwargs):
         # Determine top N (distinct) frequencies
         freqdict = {'top_distinct_freqs':np.array([])}
         
-        while len(freqdict['top_distinct_freqs'])==0:
-            freqdict = get_topN_freq(freq, power, N=N)
-            is_wf = is_window_function_peak(times, mags, errors, freqdict['top_distinct_freqs'], 
-                                            freqdict['top_distinct_freq_power'], ls_kwargs['maximum_frequency'])
-            freqdict['top_distinct_freqs'] = freqdict['top_distinct_freqs'][~is_wf]
-            N+=10
+        freqdict = get_topN_freq(freq, power, N=N)
+#         while len(freqdict['top_distinct_freqs'])==0:
+#             freqdict = get_topN_freq(freq, power, N=N)
+#             is_wf = is_window_function_peak(times, mags, errors, freqdict['top_distinct_freqs'], 
+#                                             freqdict['top_distinct_freq_power'], ls_kwargs['maximum_frequency'])
+#             freqdict['top_distinct_freqs'] = freqdict['top_distinct_freqs'][~is_wf]
+#             N+=10
             
         out = {**freqdict, **pow_stats}
         del out['top_distinct_freq_power']
@@ -895,7 +899,7 @@ def find_phase_of_minimum(results):
     phse = np.linspace(0.,1.,1000)
     full_phase_curve = retrieve_fourier_poly(results['lsq_period'] * phse + integer_periods(results['lsq_time_zeropoint_poly'], results), 
                                              results)
-    return np.max(full_phase_curve)
+    return phse[np.argmax(full_phase_curve)]
 
 def check_significant_second_minimum(results, min_phase, phase_range=[0.35,0.65], noise_thresh_factor=7., show_plot=False, return_min_location=False):
     '''
