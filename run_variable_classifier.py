@@ -16,8 +16,8 @@ def get_periodic_features_var(data, config, serial=True):
     """
     variable_output_dir = str(config['variable_output_dir'])
     
-    if os.path.isfile(variable_output_dir+'variable_features_total.pkl'):
-        with open(variable_output_dir+'variable_features_total.pkl', 'rb') as f:
+    if os.path.isfile(variable_output_dir+'variable_features_total{0}.pkl'.format(''+'_test'*int(config['test']))):
+        with open(variable_output_dir+'variable_features_total{0}.pkl'.format(''+'_test'*int(config['test'])), 'rb') as f:
             total_features = pickle.load(f)
         
         return total_features
@@ -30,23 +30,25 @@ def get_periodic_features_var(data, config, serial=True):
                                 unnest(chi) as chi,
                                 unnest(ast_res_chisq) as ast_res_chisq,
                                 unnest(ambiguous_match) as ambiguous_match  
-                                from leigh_smith.virac2_ts_tmolnar_train''',
+                                from leigh_smith.virac2_ts_tmolnar_train''' + ' limit 100000000'*int(config['test']),
                      **config.wsdb_kwargs))
     print("---Timeseries data loaded.")
+    
+    if int(config['test'])==1:
+        lcs = pd.merge(lcs, data[['sourceid']], how='inner', on='sourceid').reset_index(drop=True)
+        data = pd.merge(data, pd.DataFrame({'sourceid':np.unique(lcs['sourceid'].values)}), 
+                       how='inner', on='sourceid').reset_index(drop=True)
     
     lcs = lcs.sort_values(by=['sourceid', 'mjdobs']).reset_index(drop=True)
     uniq_ids, indices, inv_ids = np.unique(lcs['sourceid'], return_index=True, return_inverse=True)
     indices = indices[1:]
     
     data = data.sort_values(by='sourceid').reset_index(drop=True)
-    
-    print(len(data))
 
     # Add sky position of sources to be passed into periodic computation
     assert len(data)==len(uniq_ids)
-    
     assert all(data['sourceid'].values==uniq_ids)
-
+        
     ras_full = data['ra'].values[inv_ids]
     decs_full = data['dec'].values[inv_ids]
     
@@ -65,18 +67,22 @@ def get_periodic_features_var(data, config, serial=True):
                      minimum_frequency=np.float64(config['ls_min_freq']))
     method_kwargs = dict(irreg=True)
     
+    if int(config['test'])==1:
+        lightcurves = lightcurves[:2000]
+    
     #Extract features
-    split = np.array_split(np.arange(len(lightcurves)), 10)
+    split = np.array_split(np.arange(len(lightcurves)), 10 - 8 * int(config['test']))
     total_features = pd.DataFrame()
     for batch_numb, indices in enumerate(split):
         print('Running batch %i'%batch_numb)
+        # Slicing on data dataframe not necessary as cross-matching on sourceid is done
         batch_features = extract_per_feats(lightcurves[np.min(indices):np.max(indices)+1],
                                            data, ls_kwargs, method_kwargs,
                                            config, serial=serial)
-        batch_features.to_pickle(variable_output_dir+'variable_features_batch{}.pkl'.format(batch_numb))
+        batch_features.to_pickle(variable_output_dir+'variable_features_batch{0}{1}.pkl'.format(batch_numb,''+'_test'*int(config['test'])))
         total_features = pd.concat([total_features, batch_features])
     
-    total_features.to_pickle(variable_output_dir+'variable_features_total.pkl')
+    total_features.to_pickle(variable_output_dir+'variable_features_total{0}.pkl'.format(''+'_test'*int(config['test'])))
     
     return total_features
 
@@ -99,7 +105,7 @@ def generate_secondstage_training(config):
     constant_data = generate_gaia_training_set_random(len(variable_stars)//10, config,
                                                       np.float64(config['gaia_percentile']),
                                                       600000)
-    print(constant_data.columns)
+    
     constant_data['var_class']='CONST'
     
     trainset = pd.concat([variable_stars, constant_data], axis=0, sort=False).reset_index(drop=True)
@@ -126,6 +132,8 @@ if __name__=="__main__":
     config.request_password()
 
     features = generate_periodic_features(config)
+    
+    exit()
 
     features= features[~features['error']].reset_index(drop=True)
     

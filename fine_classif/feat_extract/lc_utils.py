@@ -1,15 +1,10 @@
 import numpy as np
-import pandas as pd
-
 from astropy.timeseries import LombScargle
-try:
-    from fourier_chi2 import find_period, fourier_poly_chi2_fit_cython
-except:
-    pass
 from astropy.time import Time
-from gatspy import periodic
-
 from astropy.timeseries.periodograms.lombscargle.implementations.utils import trig_sum
+from astropy.timeseries.periodograms.lombscargle._statistics import false_alarm_probability as fap
+from astropy.timeseries.periodograms.lombscargle._statistics import false_alarm_level as fal
+from astropy.stats import circvar, circcorrcoef
 from .nfft_utils import complex_exponential_sum
 
 
@@ -132,57 +127,20 @@ def trig_sum_nfft(t, y, freq_factor, use_nfft=False, irreg=False, **kwargs):
         return complex_exponential_sum(t * freq_factor, y, kwargs['f0'],
                                        kwargs['N'], kwargs['df'])
 
-
-import time as Time
-from itertools import product
-
-def fourier_poly_chi2_fit(times,
-                          mag,
-                          err,
-                          freq_dict,
-                          nterms=1,
-                          normalization='standard',
-                          npoly=1,
-                          use_nfft=False, use_fft=False,
-                          regularization=0.,
-                          regularization_power=2.,
-                          time_zeropoint_poly=2457000.,
-                          regularize_by_trace=True):
-    """
-        Faster implementation of astropy fastchi2 lombscargle.
-        Faster because the linalg.solve is vectorized
-        
-        Parameters
-        ----------
-        times, mag, err : array_like
-            time, values and errors for datapoints
-        freq_dict : dictionary for frequency grid
-            either {'f0':float, 'f1':float, 'Nf':int} so f = np.linspace(f0,f1,Nf)
-            or {'freq_grid': array}
-        nterms : int
-            number of Fourier terms to use (default 1)
-        npoly: int
-            number of polynomial terms to use (default 1)
-        use_nfft: bool
-            if True, use NFFT library. This puts limitations on frequency grid so 
-            defaults to no NFFT if conditions not satisfied.
-        normalization: string
-            how to normalize power (see astropy.timeseries.LombScargle)
-        regularization: float (default = 0.)
-            regularization term sum_i (y-Mx)^2/sigma^2 + regularization n M^T M
-        regularization_power: float (default = 2.)
-            power of k to raise regularization term to
-        time_zeropoint_poly: float (default = 2457000.)
-            time shift to apply when evaluting polynomial terms
-        regularize_by_trace: bool (default = True)
-            regularization = regularization * sum(inverr^2) -- Vanderplas & Ivezic (2015)
-    """
+def construct_alpha_beta_matrices(times,
+                                  mag_minus_mean,
+                                  inverr2,
+                                  freq_dict,
+                                  nterms=1,
+                                  npoly=1,
+                                  use_nfft=False, 
+                                  regularization=0.,
+                                  regularization_power=2.,
+                                  time_zeropoint_poly=2457000.,
+                                  regularize_by_trace=True):
     
-    inverr2 = 1. / err**2
-    ws = np.sum(inverr2)
-    meanmag = np.dot(inverr2, mag) / ws
-    mag = mag - meanmag
-    magw = inverr2 * mag
+    ws = np.sum(inverr2)   
+    magw = inverr2 * mag_minus_mean
     magws = np.sum(magw)
 
     if 'f0' in freq_dict.keys():
@@ -191,7 +149,7 @@ def fourier_poly_chi2_fit(times,
         df = (f1 - f0) / (Nf - 1)
         if df <= 0:
             raise ValueError("df must be positive")
-        kwargs = dict(f0=f0, df=df, use_fft=use_fft, N=Nf)
+        kwargs = dict(f0=f0, df=df, N=Nf, irreg=False)
     else:
         freq_grid = freq_dict['freq_grid']
         Nf = len(freq_grid)
@@ -284,12 +242,13 @@ def fourier_poly_chi2_fit(times,
     
     alpha = alpha.T
     beta = beta.T
+    
+    return alpha, beta, freq_grid
 
-    soln = np.linalg.solve(alpha, beta)
+def construct_power_grid(mag, inverr2, soln, beta, normalization='standard'):
     
     p = np.sum(beta * soln, axis=1)
     p[p < 0.] = 0.
-    soln[:, 0] += meanmag
 
     if normalization == 'psd':
         p *= 0.5
@@ -309,30 +268,217 @@ def fourier_poly_chi2_fit(times,
         raise ValueError("normalization='{}' "
                          "not recognized".format(normalization))
 
+    return p
 
+def build_output_dictionary(alpha, beta, soln, freq_grid, 
+                            mag_minus_mean, inverr2, normalization='chi2',
+                            nterms=1, npoly=1, use_nfft=False, regularization=0., regularization_power=2.,
+                            time_zeropoint_poly=2457000., regularize_by_trace=True):
     results = {}
     results['fourier_coeffs_grid'] = soln
     results['frequency_grid'] = freq_grid
     results['inv_covariance_matrix'] = alpha
-    results['power'] = p
-    results['chi2_ref'] = np.sum(mag * mag * inverr2)
+    results['chi_squared_grid'] = construct_power_grid(mag_minus_mean, inverr2, soln, beta, normalization=normalization)
+    results['chi2_ref'] = np.sum(mag_minus_mean**2 * inverr2)
+    results['lsq_nterms'] = nterms
+    results['lsq_npoly'] = npoly
+    results['lsq_regularization'] = regularization
+    results['lsq_regularization_power'] = regularization_power
+    results['lsq_time_zeropoint_poly'] = time_zeropoint_poly
+    results['lsq_regularize_by_trace'] = regularize_by_trace
+    
+    return results
+    
+
+def fourier_poly_chi2_fit(times,
+                          mag,
+                          err,
+                          freq_dict,
+                          normalization='chi2',
+                          nterms=1,
+                          npoly=1,
+                          use_nfft=False, 
+                          regularization=0.,
+                          regularization_power=2.,
+                          time_zeropoint_poly=2457000.,
+                          regularize_by_trace=True):
+    """
+        Faster implementation of astropy fastchi2 lombscargle.
+        Faster because the linalg.solve is vectorized
+        
+        Parameters
+        ----------
+        times, mag, err : array_like
+            time, values and errors for datapoints
+        freq_dict : dictionary for frequency grid
+            either {'f0':float, 'f1':float, 'Nf':int} so f = np.linspace(f0,f1,Nf)
+            or {'freq_grid': array}
+        normalization: string
+            how to normalize power (see astropy.timeseries.LombScargle)
+        nterms : int
+            number of Fourier terms to use (default 1)
+        npoly: int
+            number of polynomial terms to use (default 1)
+        use_nfft: bool
+            if True, use NFFT library. This puts limitations on frequency grid so 
+            defaults to no NFFT if conditions not satisfied.
+        regularization: float (default = 0.)
+            regularization term sum_i (y-Mx)^2/sigma^2 + regularization n M^T M
+        regularization_power: float (default = 2.)
+            power of k to raise regularization term to
+        time_zeropoint_poly: float (default = 2457000.)
+            time shift to apply when evaluting polynomial terms
+        regularize_by_trace: bool (default = True)
+            regularization = regularization * sum(inverr^2) -- Vanderplas & Ivezic (2015)
+    """
+    
+    inverr2 = 1. / err**2
+    ws = np.sum(inverr2)
+    meanmag = np.dot(inverr2, mag) / ws
+    mag_minus_mean = mag - meanmag
+    
+    alpha, beta, freq_grid = construct_alpha_beta_matrices(times, mag_minus_mean, inverr2, freq_dict,
+                                                           nterms=nterms, npoly=npoly, use_nfft=use_nfft,
+                                                           regularization=regularization, regularization_power=regularization_power,
+                                                           time_zeropoint_poly=time_zeropoint_poly,regularize_by_trace=regularize_by_trace)
+    
+    soln = np.linalg.solve(alpha, beta)
+    soln[:, 0] += meanmag
+    
+    return build_output_dictionary(alpha, beta, soln, freq_grid, mag_minus_mean, inverr2, normalization=normalization,
+                                    nterms=nterms, npoly=npoly, use_nfft=use_nfft, regularization=regularization, regularization_power=regularization_power,
+                                    time_zeropoint_poly=time_zeropoint_poly, regularize_by_trace=regularize_by_trace)
+
+def fourier_poly_chi2_fit_test(times,
+                          mag,
+                          err,
+                          freq_dict,
+                          nterms_min=1,
+                          nterms_max=10,
+                          use_bic=False,
+                          use_power_of_2=True,
+                          check_multiples=True,
+                          **kwargs):
+    """
+        Faster implementation of astropy fastchi2 lombscargle.
+        Faster because the linalg.solve is vectorized
+        
+        Parameters
+        ----------
+        times, mag, err : array_like
+            time, values and errors for datapoints
+        freq_dict : dictionary for frequency grid
+            either {'f0':float, 'f1':float, 'Nf':int} so f = np.linspace(f0,f1,Nf)
+            or {'freq_grid': array}
+        normalization: string
+            how to normalize power (see astropy.timeseries.LombScargle)
+        nterms : int
+            number of Fourier terms to use (default 1)
+        npoly: int
+            number of polynomial terms to use (default 1)
+        use_nfft: bool
+            if True, use NFFT library. This puts limitations on frequency grid so 
+            defaults to no NFFT if conditions not satisfied.
+        regularization: float (default = 0.)
+            regularization term sum_i (y-Mx)^2/sigma^2 + regularization n M^T M
+        regularization_power: float (default = 2.)
+            power of k to raise regularization term to
+        time_zeropoint_poly: float (default = 2457000.)
+            time shift to apply when evaluting polynomial terms
+        regularize_by_trace: bool (default = True)
+            regularization = regularization * sum(inverr^2) -- Vanderplas & Ivezic (2015)
+    """
+    
+    if 'Nf' in freq_dict.keys() and use_power_of_2:
+        freq_dict['Nf'] = next_power_of_2(freq_dict['Nf'])
+        assert freq_dict['Nf'] % 2 == 0 ## Nf must be even
+    
+    inverr2 = 1. / err**2
+    ws = np.sum(inverr2)
+    meanmag = np.dot(inverr2, mag) / ws
+    mag_minus_mean = mag - meanmag
+    
+    npoly = 1
+    if 'npoly' in kwargs:
+        npoly = kwargs['npoly']
+    
+    alpha, beta, freq_grid = construct_alpha_beta_matrices(times, mag_minus_mean, inverr2, freq_dict,
+                                                           nterms=nterms_max, **kwargs)
+    
+    nterms_use = np.arange(npoly + 2 * nterms_max)
+    best_aic=1e300
+    best_nterms=None
+    results = {}
+    
+    for nterms in range(nterms_min,nterms_max+1)[::-1]:
+        
+        if nterms<nterms_max:
+            for p in range(2):
+                nterms_use = np.delete(nterms_use, -npoly)
+        
+        alpha_use = alpha[:,nterms_use[:,np.newaxis],nterms_use[np.newaxis,:]]
+        beta_use = beta[:,nterms_use]
+        
+        soln = np.linalg.solve(alpha_use, beta_use)
+        soln[:, 0] += meanmag
+        
+        results[nterms] = build_bestfit_output_dictionary(
+                            build_output_dictionary(alpha_use, beta_use, soln, freq_grid, mag_minus_mean, inverr2, normalization="chi2",
+                                    nterms=nterms, **kwargs),
+                            freq_dict)
+        
+        aic = (.5 * results[nterms]['lsq_chi_squared'] + 2 * nterms) * 2
+        if use_bic:
+            aic = results[nterms]['lsq_chi_squared'] + np.log(len(mag)) * (2 * nterms)
+        ## Second check stops the solutions being highly oscillatory in the gaps in the data
+        if aic < best_aic and (~np.any(results[nterms]['amplitudes']>2.*np.diff(np.nanpercentile(mag,[5.,95.])))|(best_aic>1e299)):
+            best_aic = aic
+            best_nterms = nterms
+    
+    results = results[best_nterms]
+    
+    if np.argmax(results['amplitudes'])>0 and check_multiples:
+        
+        df = get_delta_freq(times)
+        alt_result = results.copy()
+        best_chi=1e30
+        for ii in range(1,1 + np.argmax(results['amplitudes'])):
+            if (1 + np.argmax(results['amplitudes'])) % ii != 0:
+                continue
+            double_freq_dict = {"freq_grid": 1./ii/(results['lsq_period'] / 
+                                      (1. + np.argmax(results['amplitudes']))) + np.array([-df,0.,df])}
+            double_result= fourier_poly_chi2_fit_full(times,mag,err, double_freq_dict,
+                                                      nterms=best_nterms,
+                                                       use_power_of_2=False,
+                                                       check_multiples=False, 
+                                                       **kwargs)
+
+            if double_result['lsq_chi_squared']<results['lsq_chi_squared'] \
+                and double_result['lsq_chi_squared']<best_chi:
+                alt_result = double_result
+                best_chi = double_result['lsq_chi_squared']
+                
+        if 'lsq_period_error' not in alt_result:
+            alt_result['lsq_period_error'] = lsq_uncertainties_irreg(times, mag, err, 1./alt_result['lsq_period'], **kwargs)
+                        
+        return alt_result
+    
+    if 'lsq_period_error' not in results:
+        results['lsq_period_error'] = lsq_uncertainties_irreg(times, mag, err, 1./results['lsq_period'], **kwargs)
 
     return results
 
 
-from astropy.timeseries.periodograms.lombscargle._statistics import false_alarm_probability as fap
-
-
-def false_alarm_probability(power, frequencies, data,
+def false_alarm_probability(power, max_freq, times, mag, error,
                             normalization='standard'):
     norm = normalization
     if norm == 'chi2':
         norm = 'standard'
     fap_ = fap(power,
-               np.nanmax(frequencies),
-               data[find_time_field(data)].values,
-               data['mag'].values,
-               data['error'].values,
+               max_freq,
+               times,
+               mag,
+               error,
                normalization=normalization)
     return fap_
 
@@ -356,44 +502,40 @@ def lsq_fit_find_uncertainties(results, argc):
         results['lsq_freq_error'] = 0.
     else:
         results['lsq_freq_error'] = np.sqrt(results['lsq_freq_error'])
-
-
+        
+    results['lsq_period_error'] = results['lsq_freq_error'] * results['lsq_period'] ** 2
+    
     gradientA = (results['fourier_coeffs_grid'][argc + 1] -
                  results['fourier_coeffs_grid'][argc - 1]) / (2 * df)
     gradientA *= results['lsq_freq_error']
     results['fourier_coeffs_cov_incl_period_error'] = np.copy(results['fourier_coeffs_cov'])
     if np.all(gradientA == gradientA):
-        results['fourier_coeffs_incl_period_error'] += \
+        results['fourier_coeffs_cov_incl_period_error'] += \
             gradientA[:,np.newaxis] * gradientA[np.newaxis,:]
 
     return results
 
-def lsq_uncertainties_irreg(times, mag, err, nterms, npoly, freq_dict, df, top_freq):
+def get_delta_freq(times):
+    baseline = times.max() - times.min()
+    df = 0.2 / baseline
+    return df
+
+def lsq_uncertainties_irreg(times, mag, err, top_freq, **kwargs):
     '''
     Determine Least Squares period error based on curvature of chi2 surface
-    (for irregular frequency grid entry)
-    
-    Input:
-    
-    - freq_grid: [f_out-df, f_out, f_out_df]
-    
+    around a given frequency top_freq
     '''
 
-    fft_kwargs = dict()
-    temp_results = fourier_poly_chi2_fit_irreg(times,
-                                    mag,
-                                    err,
-                                    nterms=nterms,
-                                    normalization="chi2",
-                                    npoly=npoly,
-                                    regularization=0.,
-                                    regularization_power=2.,
-                                    time_zeropoint_poly=2457000.,
-                                    regularize_by_trace=True,
-                                    **freq_dict, **fft_kwargs)
+    # Period/Frequency error estimate based on curvature of chi2 surface 
+    # -- for irregular grid no guarantee that grid is fine enough to well approximate chi2 around minimum
+    df = get_delta_freq(times)
+    freq_dict = dict(freq_grid=[top_freq-df, top_freq, top_freq+df])
+        
+    temp_results = fourier_poly_chi2_fit(times, mag, err, freq_dict, normalization="chi2", **kwargs)
     
     # Estimate error from chi2 curvature
-    temp_results['chi_squared_grid'] = temp_results.pop('power')
+    df = np.diff(freq_dict['freq_grid'])[0]
+    top_freq = freq_dict['freq_grid'][1]
     lsq_freq_error = 1. / (.5 *
                                       (temp_results['chi_squared_grid'][0] +
                                        temp_results['chi_squared_grid'][2] -
@@ -411,7 +553,6 @@ def lsq_uncertainties_irreg(times, mag, err, nterms, npoly, freq_dict, df, top_f
 def next_power_of_2(x):  
     return 1 if x == 0 else 2**(x - 1).bit_length()
 
-from astropy.stats import circvar, circcorrcoef
 
 def circcov(data):
     '''
@@ -426,98 +567,24 @@ def circcov(data):
             result[nn][jj] = result[jj][nn] = circcorrcoef(data[:,jj], data[:,nn])*np.sqrt(result[jj][jj]*result[nn][nn])
             
     return result
-    
-    
-def fourier_poly_chi2_fit_full(times,
-                               mag,
-                               err,
-                               freq_dict, 
-                               nterms=1,
-                               npoly=1,
-                               regularization=0.1,
-                               regularization_power=2.,
-                               time_zeropoint_poly=2457000.,
-                               keep_small=True,
-                               regularize_by_trace=True, 
-                               use_power_of_2=True,
-                               force=True, use_fft=False, use_nfft=False,
-                               check_multiples=True):
-    '''
-        Wrapper of main algorithm to do all the post-processing
-        
-        freq_dict = {f0, f1, Nf} - if irreg = False (regular grid) 
-                  = {freq_grid=[f_i]} - if irreg = True (irregular grid)
-        
-        if keep_small, remove arrays from output (e.g. chi_squared_grid at 
-        range of periods).
 
-        NFFT works way better if Nf is a power of 2. use_power_of_2 will automatically
-        find the next power of 2 > Nf. If may be more convenient for speed reasons to 
-        use the lower power of 2. 
-        
-        Force = True finds least squares analytic solution for a predetermined grid
-        of minimal frequencies. Necessary as input to determined chi2 min dispersion from population. 
-        
-        irreg = True allows for the the input of an irregularly spaced frequency grid
-        in the least squares computation. Computation uses brute force trig sum O[N^2],
-        which is faster than FFT small numbers of frequencies. 
-        
-    '''
-    fn = fourier_poly_chi2_fit
-        
-    if 'Nf' in freq_dict.keys():
-        freq_dict['Nf'] = next_power_of_2(freq_dict['Nf'])
-        assert freq_dict['Nf'] % 2 == 0 ## Nf must be even
-    
-    results = fn(times,
-                                    mag,
-                                    err,
-                                    freq_dict,
-                                    nterms=nterms,
-                                    normalization="chi2",
-                                    npoly=npoly,
-                                    regularization=regularization,
-                                    regularization_power=regularization_power,
-                                    time_zeropoint_poly=time_zeropoint_poly,
-                                    regularize_by_trace=regularize_by_trace,
-                                    use_fft=use_fft, use_nfft=use_nfft)
-    
-    results['chi_squared_grid'] = results.pop('power')
+def build_bestfit_output_dictionary(results, freq_dict):
     
     # Fill with best result
     argc = np.argmin(results['chi_squared_grid'])
-
     results['lsq_period'] = 1. / results['frequency_grid'][argc]
     results['fourier_coeffs'] = results['fourier_coeffs_grid'][argc]
     results['fourier_coeffs_cov'] = np.linalg.inv(
         results['inv_covariance_matrix'][argc])
-    results['lsq_nterms'] = nterms
-    results['lsq_npoly'] = npoly
-    results['lsq_regularization'] = regularization
-    results['lsq_regularization_power'] = regularization_power
-    results['lsq_time_zeropoint_poly'] = time_zeropoint_poly
-    results['lsq_regularize_by_trace'] = regularize_by_trace
     results['lsq_chi_squared'] = results['chi_squared_grid'][argc]
-    
-    if force:
-        pass
-    else:
-        disp_min = results['lsq_chi_squared']/np.mean(results['chi_squared_grid'])
-        results['lsq_chi2_min_disp'] = disp_min
     
     # Period/Frequency error estimate based on curvature of chi2 surface 
     # -- for irregular grid no guarantee that grid is fine enough to well approximate chi2 around minimum
-    if 'Nf' not in freq_dict.keys():
-        baseline = times.max() - times.min()
-        df = 0.2 / baseline
-        top_freq = results['frequency_grid'][argc]
-        freq_curv = dict(freq_grid=[top_freq-df, top_freq, top_freq+df])
-        results['lsq_period_error'] = lsq_uncertainties_irreg(times, mag, err, nterms, npoly, freq_curv, df, top_freq)
-        
-    else:   
+    if 'Nf' in freq_dict.keys():
         results = lsq_fit_find_uncertainties(results, argc)
-
+    
     # Compute amplitudes & phases
+    nterms = results['lsq_nterms']
     results['amplitudes'] = np.sqrt(
         results['fourier_coeffs'][1:2 * nterms + 1:2]**2 +
         results['fourier_coeffs'][2:2 * nterms + 1:2]**2)
@@ -553,59 +620,70 @@ def fourier_poly_chi2_fit_full(times,
             (len(results['amplitudes']), len(results['amplitudes'])))
         results['phases_cov'] = np.nan * np.ones(
             (len(results['phases']), len(results['phases'])))
+
+    for ii in [
+            'chi_squared_grid', 'fourier_coeffs_grid',
+            'inv_covariance_matrix', 'frequency_grid'
+    ]:
+        del results[ii]
+        
+    return results
     
-    results['ordering'] = 'new'
+def fourier_poly_chi2_fit_full(times,
+                               mag,
+                               err,
+                               freq_dict, 
+                               check_multiples=True,
+                               use_power_of_2=True,
+                               return_period_error=True,
+                               **kwargs
+                              ):
+    '''
+        Wrapper of main algorithm to do all the post-processing
+        
+        freq_dict = {f0, f1, Nf} - (regular grid) 
+                  = {freq_grid=[f_i]} - (irregular grid)
+
+        NFFT works way better if Nf is a power of 2. use_power_of_2 will automatically
+        find the next power of 2 > Nf. If may be more convenient for speed reasons to 
+        use the lower power of 2. 
+        
+    '''
+    
+    if 'Nf' in freq_dict.keys() and use_power_of_2:
+        freq_dict['Nf'] = next_power_of_2(freq_dict['Nf'])
+        assert freq_dict['Nf'] % 2 == 0 ## Nf must be even
+    
+    results = fourier_poly_chi2_fit(times, mag, err, freq_dict, normalization="chi2", **kwargs)
+
+    results = build_bestfit_output_dictionary(results, freq_dict)
     
     if np.argmax(results['amplitudes'])>0 and check_multiples:
         
-        chiN=results['lsq_chi_squared']
-        
-        freq_sep = np.diff(results['frequency_grid'])[0]
-        if freq_sep>1e-5:
-            freq_sep=1e-5
-        alt_result = results
+        df = get_delta_freq(times)
+        alt_result = results.copy()
         best_chi=1e30
         for ii in range(1,1 + np.argmax(results['amplitudes'])):
             if (1 + np.argmax(results['amplitudes'])) % ii != 0:
                 continue
-            double_result= fourier_poly_chi2_fit_full(times,
-                                               mag,
-                                               err,
-                                               1./ii/(results['lsq_period'] / 
-                                                   (1. + np.argmax(results['amplitudes'])))-3.*freq_sep,
-                                               1./ii/(results['lsq_period'] / 
-                                                     (1. + np.argmax(results['amplitudes'])))+4.*freq_sep,
-                                               8,
-                                               nterms=nterms,
-                                               npoly=npoly,
-                                               use_nfft=False,
-                                               regularization=regularization,
-                                               regularization_power=regularization_power,
-                                               time_zeropoint_poly=time_zeropoint_poly,
-                                               keep_small=True,
-                                               regularize_by_trace=regularize_by_trace,
-                                               force=force, irreg=irreg, use_fft=use_fft, use_nfft=use_nfft,
-                                               check_multiples=False)
+            double_freq_dict = {"freq_grid": 1./ii/(results['lsq_period'] / 
+                                      (1. + np.argmax(results['amplitudes']))) + np.array([-df,0.,df])}
+            double_result= fourier_poly_chi2_fit_full(times,mag,err, double_freq_dict,
+                                                       use_power_of_2=False,
+                                                       check_multiples=False, 
+                                                       return_period_error=False,
+                                                       **kwargs)
 
-            dchiN=double_result['lsq_chi_squared']
-
-            if dchiN<chiN and dchiN<best_chi:
+            if double_result['lsq_chi_squared']<results['lsq_chi_squared'] \
+                and double_result['lsq_chi_squared']<best_chi:
                 alt_result = double_result
-                best_chi = dchiN
-                if not keep_small:
-                    for ii in ['chi_squared_grid', 'fourier_coeffs_grid',
-                                'inv_covariance_matrix', 'frequency_grid']:
-                        alt_result[ii]=results[ii]
-                        
-        return alt_result
+                best_chi = double_result['lsq_chi_squared']
         
-    if keep_small:
-        for ii in [
-                'chi_squared_grid', 'fourier_coeffs_grid',
-                'inv_covariance_matrix', 'frequency_grid'
-        ]:
-            del results[ii]
-
+        results = alt_result
+    
+    if 'lsq_period_error' not in results and return_period_error:
+        results['lsq_period_error'] = lsq_uncertainties_irreg(times, mag, err, 1./results['lsq_period'], **kwargs)
+        
     return results
 
 def fourier_poly_chi2_fit_nterms_iterations(times,
@@ -614,6 +692,7 @@ def fourier_poly_chi2_fit_nterms_iterations(times,
                                             freq_dict,
                                             nterms_min,
                                             nterms_max,
+                                            use_bic=False,
                                             **kwargs):
     
     best_aic=1e300
@@ -622,9 +701,11 @@ def fourier_poly_chi2_fit_nterms_iterations(times,
     
     for nterms in range(nterms_min, nterms_max+1):
         kwargs['nterms'] = nterms
-        results[nterms] = fourier_poly_chi2_fit_full(times,mag,err,freq_dict,**kwargs)
+        results[nterms] = fourier_poly_chi2_fit_full(times, mag, err, freq_dict, **kwargs)
         # Each Fourier term contributes 2 dof
         aic = (.5 * results[nterms]['lsq_chi_squared'] + 2 * nterms) * 2
+        if use_bic:
+            aic = results[nterms]['lsq_chi_squared'] + np.log(len(mag)) * (2 * nterms)
         ## Second check stops the solutions being highly oscillatory in the gaps in the data
         if aic < best_aic and (~np.any(results[nterms]['amplitudes']>2.*np.diff(np.nanpercentile(mag,[5.,95.])))|(best_aic>1e299)):
             best_aic = aic
@@ -666,16 +747,30 @@ def get_topN_freq(freq, power, N=30, tol=1e-3):
     ls_period, max_pow = 1./topN_freqs[_ind], topN_powrs[_ind]
     
     top_distinct_freqs = []
+    top_distinct_freq_power = []
     while len(topN_freqs)>=1:
         curr = topN_freqs[0]
-        top_distinct_freqs.append(curr)
+        if ~ np.any(np.isclose(1./curr, alias_periods, rtol=0, atol=0.00009)):
+            top_distinct_freqs.append(curr)
+            top_distinct_freq_power.append(topN_powrs[0])
         
         # Group frequencies within certain tolerance
         group_bool = np.isclose(curr, topN_freqs, rtol=0., atol=tol)
         topN_freqs = topN_freqs[~(group_bool)]
+        topN_powrs = topN_powrs[~(group_bool)]
         
-    return dict(ls_period=ls_period, max_pow=max_pow, top_distinct_freqs=top_distinct_freqs) 
+    return dict(ls_period=ls_period, max_pow=max_pow, top_distinct_freqs=np.array(top_distinct_freqs),
+                top_distinct_freq_power=np.array(top_distinct_freq_power))
 
+def is_window_function_peak(times, mags, errors, freqs, power, NW=5):
+    
+    model = LombScargle(times,
+                    np.ones_like(times),
+                    errors,
+                    center_data=False, fit_mean=False
+                    )
+    power_window = model.power(freqs)
+    return power_window>power*0.5
 
 def lombscargle_stats(times, mags, errors, N=30, irreg=True, **ls_kwargs):
     """
@@ -693,8 +788,17 @@ def lombscargle_stats(times, mags, errors, N=30, irreg=True, **ls_kwargs):
     
     if irreg:
         # Determine top N (distinct) frequencies
-        freqdict = get_topN_freq(freq, power, N=N)
+        freqdict = {'top_distinct_freqs':np.array([])}
+        
+        while len(freqdict['top_distinct_freqs'])==0:
+            freqdict = get_topN_freq(freq, power, N=N)
+            is_wf = is_window_function_peak(times, mags, errors, freqdict['top_distinct_freqs'], 
+                                            freqdict['top_distinct_freq_power'], ls_kwargs['maximum_frequency'])
+            freqdict['top_distinct_freqs'] = freqdict['top_distinct_freqs'][~is_wf]
+            N+=10
+            
         out = {**freqdict, **pow_stats}
+        del out['top_distinct_freq_power']
     else:
         # Find max power and hence most likely period
         periods = 1./freq
@@ -732,10 +836,9 @@ def retrieve_fourier_poly(times, results, with_var=False, var_at_best_period=Tru
     SCX = np.empty(((Kmax - 1) * 2, len(times)))
     SCX[::2] = SINX
     SCX[1::2] = COSX
-    if results['ordering'] == 'old':
-        X = np.concatenate([ONES, SCX])
-    else:
-        X = np.concatenate([ONES[:1], SCX, ONES[1:]])
+    
+    X = np.concatenate([ONES[:1], SCX, ONES[1:]])
+    
     if with_var:
         cov = results['fourier_coeffs_cov'+'_incl_period_error'*(~var_at_best_period)]
         full_cov = np.dot(X.T, np.dot(cov, X))
@@ -767,30 +870,34 @@ def retrieve_fourier_poly_secondderiv(times, results):
     SCX[1::2] = COSX
     return -np.dot(results['fourier_coeffs'][1:len(SCX)+1], SCX)
 
+def integer_periods(t, results):
+    return (t // results['lsq_period']) * results['lsq_period']
+
 def find_maximum_fourier(results):
     phse = np.linspace(0.,1.,1000)
-    full_phase_curve = retrieve_fourier_poly(results['lsq_period'] * phse,results)
+    full_phase_curve = retrieve_fourier_poly(results['lsq_period'] * phse + integer_periods(results['lsq_time_zeropoint_poly'], results),
+                                             results)
     return np.min(full_phase_curve)
 
 def find_phase_of_minimum(results):
     phse = np.linspace(0.,1.,1000)
-    full_phase_curve = retrieve_fourier_poly(results['lsq_period'] * phse,results)
-    return phse[np.argmax(full_phase_curve)] * results['lsq_period'] 
+    full_phase_curve = retrieve_fourier_poly(results['lsq_period'] * phse + integer_periods(results['lsq_time_zeropoint_poly'], results), 
+                                             results)
+    return phse[np.argmax(full_phase_curve)]
 
 def check_significant_second_minimum(results, min_phase, phase_range=[0.35,0.65], noise_thresh_factor=5, show_plot=False, return_min_location=False):
     '''
         Finds whether there is a minimum of depth > noise_thresh_factor * noise in the phase interval phase_range (normalized 0 to 1)
+        Depth is determined by minimum separation from nearby maxima
         min_phase is the phase corresponding to absolute minimum of light curve (output from find_phase_minimum)
     '''
     
     # Find location of all minima in phase_range and all maxima
     phases = np.linspace(0.,1.,500)
-    first_deriv = retrieve_fourier_poly_firstderiv(np.ones(1)*(results['lsq_period'] * phases + min_phase), 
-                                                                   results)
+    first_deriv = retrieve_fourier_poly_firstderiv(results['lsq_period'] * (phases + min_phase), results)
     turning_points = (first_deriv[1:]*first_deriv[:-1]<0)
     mid_phases = .5 * (phases[1:]+phases[:-1])
-    sign_at_tp = np.sign(retrieve_fourier_poly_secondderiv(np.ones(1)*(results['lsq_period'] * mid_phases + min_phase), 
-                                                                   results))
+    sign_at_tp = np.sign(retrieve_fourier_poly_secondderiv(results['lsq_period'] * (mid_phases + min_phase), results))
     minima = np.argwhere((sign_at_tp<0)&turning_points&(mid_phases>phase_range[0])&(mid_phases<phase_range[1]))
     maxima = np.argwhere((sign_at_tp>0)&turning_points)
     
@@ -801,8 +908,9 @@ def check_significant_second_minimum(results, min_phase, phase_range=[0.35,0.65]
     distance_positive[distance_positive<0]=n+1
     distance_negative[distance_negative>0]=-(n+1)
 
-    fpoly, fpoly_var = retrieve_fourier_poly(np.ones(1)*(results['lsq_period'] * mid_phases + min_phase), 
-                                                                   results, with_var=True)
+    fpoly, fpoly_var = retrieve_fourier_poly(results['lsq_period'] * (mid_phases + min_phase)
+                                             + integer_periods(results['lsq_time_zeropoint_poly'], results), 
+                                                       results, with_var=True)
     min_distance = np.hstack([np.argsort(distance_positive, axis=1)[:,:1,0],
                                   np.argsort(-distance_negative, axis=1)[:,:1,0]])
     if show_plot:
@@ -814,7 +922,7 @@ def check_significant_second_minimum(results, min_phase, phase_range=[0.35,0.65]
     
     # Check if minima depth > noise_thresh * noise
     noise = np.sqrt(fpoly_var[minima])
-    is_there_second_minimum = np.any((fpoly[minima] - np.nanmean(fpoly[maxima[min_distance]],axis=1)).flatten()>noise_thresh_factor*noise.flatten())
+    is_there_second_minimum = np.any((fpoly[minima] - np.nanmax(fpoly[maxima[min_distance]],axis=1)).flatten()>noise_thresh_factor*noise.flatten())
     
     # Return location of minimum if required
     if return_min_location:
@@ -827,7 +935,7 @@ def check_significant_second_minimum(results, min_phase, phase_range=[0.35,0.65]
     return is_there_second_minimum
 
 def find_peak_ratio_model(results, min_phase, second_minimum, min_phase_2):
-        '''
+    '''
         Find the ratio of the minima depth (relative to 1st percentile of magnitude) using model.
         First checks if there are significant secondary minima. If not every other primary minimum is compared (which will always return 1)
         min_phase is the phase corresponding to absolute minimum of light curve (output from find_phase_minimum)
@@ -835,8 +943,10 @@ def find_peak_ratio_model(results, min_phase, second_minimum, min_phase_2):
     '''
     ## Two minima per period
     if second_minimum:
-        middle_min=retrieve_fourier_poly(np.ones(1)*(results['lsq_period'] * min_phase_2 + min_phase),results)[0]
-        first_min=retrieve_fourier_poly(np.ones(1)*min_phase,results)[0]
+        middle_min=retrieve_fourier_poly(np.ones(1) * results['lsq_period'] * (min_phase_2 + min_phase)
+                                        + integer_periods(results['lsq_time_zeropoint_poly'], results),results)[0]
+        first_min=retrieve_fourier_poly(np.ones(1) * min_phase * results['lsq_period']
+                                        + integer_periods(results['lsq_time_zeropoint_poly'], results),results)[0]
         maxx = find_maximum_fourier(results)
         if first_min>middle_min:
             first_min, middle_min = middle_min, first_min
@@ -845,7 +955,10 @@ def find_peak_ratio_model(results, min_phase, second_minimum, min_phase_2):
     else:
         return 1.
 
-def find_peak_ratio(times,mag,errors,results, min_phase, second_minimum, min_phase_2,min_bin_size=0.05, Ndatapoints=3):
+def _ivw(mag, errors, lc_min, fltr):
+    return np.nansum(((mag-lc_min)/errors**2)[fltr]) / np.nansum((1./errors**2)[fltr])
+
+def find_peak_ratio_data(times, mag, errors, results, min_phase, second_minimum, min_phase_2, min_bin_size=0.05, Ndatapoints=3):
     '''
         Find the ratio of the minima depth (relative to 1st percentile of magnitude) using data.
         First checks if there are significant secondary minima. If not every other primary minimum is compared.
@@ -855,31 +968,30 @@ def find_peak_ratio(times,mag,errors,results, min_phase, second_minimum, min_pha
     '''
     ## Find location of absolute minimum phase and detect if significant minimum
     lc_min = np.nanpercentile(mag, 1.)
-    ## Two minima per period -- compare primary minimum and found significant secondary minimum
+    min_time = min_phase * results['lsq_period']
+    
+    period = (1 + ~second_minimum) * results['lsq_period']
+    
     if second_minimum:
-        phases = ((times-min_phase) / results['lsq_period'] + min_bin_size) % 1
-        while (np.count_nonzero(phases < min_bin_size)<Ndatapoints) | \
-                (np.count_nonzero((phases > min_phase_2)&(phases < min_phase_2+min_bin_size))<Ndatapoints):
-            min_bin_size+=0.01
-            phases = ((times-min_phase) / results['lsq_period'] + min_bin_size) % 1
-        peak1 = np.nansum(((mag-lc_min)/errors**2)[phases < min_bin_size])/\
-                    np.nansum((1./errors**2)[phases < min_bin_size])
-        peak2 = np.nansum(((mag-lc_min)/errors**2)[(phases > min_phase_2)&(phases < min_phase_2+min_bin_size)])/\
-                    np.nansum((1./errors**2)[(phases > min_phase_2)&(phases < min_phase_2+min_bin_size)])
-    ## One minimum per period -- compare alternate primary minimum
+        min_phase_2nd = min_phase_2
     else:
-        phases = ((times-min_phase) / (2. * results['lsq_period']) + min_bin_size) % 1
-        while (np.count_nonzero(phases < min_bin_size)<Ndatapoints) | \
-                (np.count_nonzero((phases > .5)&(phases < .5+min_bin_size))<Ndatapoints):
-            min_bin_size+=0.01
-            phases = ((lc[find_time_field(lc)]-min_phase) / (2. * results['lsq_period']) + min_bin_size) % 1
-        peak1 = np.nansum(((mag-lc_min)/errors**2)[phases < min_bin_size])/\
-                    np.nansum((1./errors**2)[phases < min_bin_size])
-        peak2 = np.nansum(((mag-lc_min)/errors**2)[(phases > .5)&(phases < .5+min_bin_size)])/\
-                    np.nansum((1./errors**2)[(phases > .5)&(phases < .5+min_bin_size)])
+        min_phase_2nd = .5
+    
+    fltr1 = lambda phases, min_bin_size: (phases < min_bin_size)
+    fltr2 = lambda phases, min_bin_size: (phases > min_phase_2nd) & (phases < min_phase_2nd + min_bin_size)
+    
+    phases = ((times-min_time) / period + min_bin_size) % 1
+    while (np.count_nonzero(fltr1(phases, min_bin_size))<Ndatapoints) | (np.count_nonzero(fltr2(phases, min_bin_size))<Ndatapoints):
+        min_bin_size+=0.01
+        phases = ((times-min_time) / period + min_bin_size) % 1
+            
+    peak1 = _ivw(mag, errors, lc_min, fltr1(phases, min_bin_size))
+    peak2 = _ivw(mag, errors, lc_min, fltr2(phases, min_bin_size))
+    
     ## check peak ratio <=1
     if peak1>peak2:
         peak2, peak1 = peak1, peak2
+        
     return peak1/peak2
         
 
