@@ -360,8 +360,7 @@ def fourier_poly_chi2_fit_test(times,
                           check_multiples=True,
                           **kwargs):
     """
-        Faster implementation of astropy fastchi2 lombscargle.
-        Faster because the linalg.solve is vectorized
+        Iterate over Fourier models with different nterms choosing best according to AIC
         
         Parameters
         ----------
@@ -370,23 +369,16 @@ def fourier_poly_chi2_fit_test(times,
         freq_dict : dictionary for frequency grid
             either {'f0':float, 'f1':float, 'Nf':int} so f = np.linspace(f0,f1,Nf)
             or {'freq_grid': array}
-        normalization: string
-            how to normalize power (see astropy.timeseries.LombScargle)
-        nterms : int
-            number of Fourier terms to use (default 1)
-        npoly: int
-            number of polynomial terms to use (default 1)
-        use_nfft: bool
-            if True, use NFFT library. This puts limitations on frequency grid so 
-            defaults to no NFFT if conditions not satisfied.
-        regularization: float (default = 0.)
-            regularization term sum_i (y-Mx)^2/sigma^2 + regularization n M^T M
-        regularization_power: float (default = 2.)
-            power of k to raise regularization term to
-        time_zeropoint_poly: float (default = 2457000.)
-            time shift to apply when evaluting polynomial terms
-        regularize_by_trace: bool (default = True)
-            regularization = regularization * sum(inverr^2) -- Vanderplas & Ivezic (2015)
+        nterms_min : int
+            minimum number of Fourier terms to use (default 1)
+        nterms_min : int
+            maximum number of Fourier terms to use (default 1)
+        use_bic : bool
+            Use Bayesian Information Criterion (instead of Akaike)
+        use_power_of_2: bool
+            if freq_dict is {f0, f1, Nf} format, round Nf to next power of 2
+        check_multiples: bool
+            check multiples of the best period if the maximum amplitude isn't in the 0th position
     """
     
     if 'Nf' in freq_dict.keys() and use_power_of_2:
@@ -407,7 +399,7 @@ def fourier_poly_chi2_fit_test(times,
     
     nterms_use = np.arange(npoly + 2 * nterms_max)
     best_aic=1e300
-    best_nterms=None
+    best_nterms=nterms_min
     results = {}
     
     for nterms in range(nterms_min,nterms_max+1)[::-1]:
@@ -702,7 +694,7 @@ def fourier_poly_chi2_fit_nterms_iterations(times,
                                             **kwargs):
     
     best_aic = 1e300
-    best_nterms = None
+    best_nterms = nterms_min
     results = {}
         
     for nterms in range(nterms_min, nterms_max+1):
@@ -739,7 +731,7 @@ def power_stats(power):
     return {'pow_mean_disp':mean_disp}
 
 # Sidereal and standard day aliases to be removed
-alias_periods = np.array([0.99726, 0.99999, 0.99726/2, 0.99999/2])
+alias_periods = np.array([0.99726, 0.99999, 0.99726/2, 0.99999/2, 0.99726/3., 0.99999/3.])
 
 def get_topN_freq(freq, power, N=30, tol=1e-3):
     """

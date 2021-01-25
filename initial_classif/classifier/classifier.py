@@ -103,17 +103,13 @@ class classification(object):
             bot, top = eff_median-Nsigma*eff_sigma, eff_median+Nsigma*eff_sigma
             fltr &= ~((df[i]<bot)|(df[i]>top))   
             self.upper_lower_clips[i] = [bot, top]
+            print(i, np.count_nonzero(fltr))
             
         if impute:
             self.imputer = KNNImputer(n_neighbors=5)
             df[self.data_cols] = self.imputer.fit_transform(df[self.data_cols].values)
-#             self.impute_values = {}
-#             for i in self.data_cols:
-#                 self.impute_values[i] = np.nanmedian(df[i].values)
-#                 df[i].fillna(self.impute_values[i], inplace=True)
         else:
             self.imputer = None
-#             self.impute_values = None
             
         print("{}% sources removed from clip.".format(round(len(df)/np.count_nonzero(fltr)-1, 4)*100))
         

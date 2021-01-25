@@ -132,10 +132,12 @@ if __name__=="__main__":
     config.request_password()
 
     features = generate_periodic_features(config)
-    
-    exit()
 
     features= features[~features['error']].reset_index(drop=True)
+    
+    features = features[(features['log10_fap']<np.float64(config['log10_fap']))].reset_index(drop=True)
+    
+    features = features[~((features['var_class']=='EA/EB')&~(features['significant_second_minimum']))].reset_index(drop=True)
     
     classifier = variable_classification(features, config)
     

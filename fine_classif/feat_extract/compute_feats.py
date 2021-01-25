@@ -237,6 +237,7 @@ def quality_cut(data, chicut=5., ast_cut=11.829, amb_corr=1):
     data = data[~((data['chi'] > chicut) &
                 (data['mag'] < maglimit))].reset_index(drop=True)
     data = data[~(data['ast_res_chisq']>ast_cut)].reset_index(drop=True)
+    data = data[(data['emag']>0)].reset_index(drop=True)
     
     if amb_corr:
         data = data[~(data['ambiguous_match'])].reset_index(drop=True)
@@ -338,7 +339,11 @@ def source_feat_extract(lc, config, ls_kwargs={}, method_kwargs={}):
                                              npoly=npoly)
             
         # compute false-alarm probability
-        per_feats['log10_fap'] = np.log10(fap(per_feats['lsq_power'],ls_kwargs['maximum_frequency'], times, mags, errors))
+        fap_ = fap(per_feats['lsq_power'],ls_kwargs['maximum_frequency'], times, mags, errors)
+        if fap_ > 0.:
+            per_feats['log10_fap'] = np.log10(fap_)
+        else:
+            per_feats['log10_fap'] = -323.
         
         lag_s = tt.time()
         lag_feats = find_lag(times, period=per_dict['ls_period'])
@@ -351,7 +356,11 @@ def source_feat_extract(lc, config, ls_kwargs={}, method_kwargs={}):
         per_feats = periodic_feats(times, mags, errors, nterms_min, nterms_max, npoly)
         
         # compute false-alarm probability
-        per_feats['log10_fap'] = np.log10(fap(per_feats['lsq_power'],ls_kwargs['maximum_frequency'], times, mags, errors))
+        fap_ = fap(per_feats['lsq_power'],ls_kwargs['maximum_frequency'], times, mags, errors)
+        if fap_ > 0.:
+            per_feats['log10_fap'] = np.log10(fap_)
+        else:
+            per_feats['log10_fap'] = -323.
         
         lag_feats = find_lag(times, period=per_feats['lsq_period'])
         
