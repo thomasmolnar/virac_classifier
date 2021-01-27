@@ -168,16 +168,16 @@ def get_periodic_features_mira_sample(config, serial=False):
     
     return total_features
     
+col32_save = ['amp_0', 'amp_1', 'amp_2', 'amp_3', 
+              'amp_double_0', 'amp_double_1', 'amp_double_2', 'amp_double_3', 
+              'amplitude', 'beyondfrac', 'delta_loglik', 
+              'ls_period','lsq_period', 'max_pow', 'max_phase_lag', 'pow_mean_disp', 'time_lag_mean',
+              'phi_0','phi_1','phi_2','phi_3',
+              'phi_double_0','phi_double_1','phi_double_2','phi_double_3',           
+              'peak_ratio_model', 'peak_ratio_data',
+              'JK_col','HK_col','prob']
 
-save_cols_types = dict(zip(['amp_0', 'amp_1', 'amp_2', 'amp_3', 
-                 'amp_double_0', 'amp_double_1', 'amp_double_2', 'amp_double_3', 
-                 'amplitude', 'beyondfrac', 'delta_loglik', 
-                 'ls_period', #'ls_period_error', 
-                 'lsq_period',
-                 'max_pow', 'max_phase_lag', 'pow_mean_disp', 'time_lag_mean',
-                 'phi_0','phi_1','phi_2','phi_3',
-                 'phi_double_0','phi_double_1','phi_double_2','phi_double_3',
-                 'JK_col','HK_col','prob'],[np.float32]*29))
+save_cols_types = dict(zip(col32_save,[np.float32]*len(col32_save)))
 
 def generate_secondstage_training(config):
     variable_stars = load_all_variable_stars(config)

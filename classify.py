@@ -65,6 +65,32 @@ def find_cells(input_data, grid):
     
     return np.argwhere(cells)[:,1]
 
+save_cols = [
+    'sourceid', 'class', 'prob','n_epochs',
+    'amp_0', 'amp_1', 'amp_2', 'amp_3', 
+    'amp_double_0', 'amp_double_1', 'amp_double_2', 'amp_double_3', 
+    'amplitude', 'beyondfrac', 'delta_loglik', 
+    'lsq_period', 'lsq_period_error', 'lsq_nterms', 'max_pow', 'max_phase_lag', 'pow_mean_disp', 'time_lag_mean',
+    'significant_second_minimum',
+    'phi_0','phi_1','phi_2','phi_3',
+    'phi_double_0','phi_double_1','phi_double_2','phi_double_3',
+    'peak_ratio_model', 'peak_ratio_data',
+    'JK_col','HK_col', 'prob_1st_stage'
+]
+
+col32_save = [
+    'amp_0', 'amp_1', 'amp_2', 'amp_3', 
+    'amp_double_0', 'amp_double_1', 'amp_double_2', 'amp_double_3', 
+    'amplitude', 'beyondfrac', 'delta_loglik', 
+    'lsq_period_error', 'max_pow', 'max_phase_lag', 'pow_mean_disp', 'time_lag_mean',
+    'phi_0','phi_1','phi_2','phi_3',
+    'phi_double_0','phi_double_1','phi_double_2','phi_double_3',           
+    'peak_ratio_model', 'peak_ratio_data',
+    'JK_col','HK_col','prob', 'prob_1st_stage'
+]
+
+save_cols_types = dict(zip(col32_save,[np.float32]*len(col32_save)))
+
 def classify_region(grid, variable_classifier, lightcurve_loader, 
                     config, hpx_table_index):
     
@@ -96,14 +122,17 @@ def classify_region(grid, variable_classifier, lightcurve_loader,
     
     variable_candidates = binary_output[(binary_output['class']=='VAR')&
                                      (np.float64(binary_output['prob'])>np.float64(config['probability_thresh']))].reset_index(drop=True)
+    
     print('Healpix {0}: {1}/{2} variable candidates'.format(hpx_table_index, len(variable_candidates), len(binary_output)))
+    
+    variable_candidates = variable_candidates.rename(columns={"prob": "prob_1st_stage"})
     
     variable_candidates = get_periodic_features(variable_candidates, lightcurve_loader, config)
     variable_candidates = variable_candidates[~variable_candidates['error']].reset_index(drop=True)
     
     variable_output = variable_classifier.predict(variable_candidates)
-
-    variable_output[save_cols_types.keys()].astype(save_cols_types).to_pickle(
+    
+    variable_output[save_cols].astype(save_cols_types).to_pickle(
         config['results_dir'] + 'results_%i%s.pkl'%(hpx_table_index,''+'_test'*int(config['test'])))
     
     final_time = time.time()

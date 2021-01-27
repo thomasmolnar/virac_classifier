@@ -44,7 +44,7 @@ def magarr_stats(mags):
     med_magdev = np.median(magdev)
     
     out = {'mean': mean, 'sd': sd, 'skew': skew, 'kurt': kurt, 'amplitude': amp,
-           'beyondfrac': beyondfrac, 'med_magdev': med_magdev}
+           'beyondfrac': beyondfrac, 'med_magdev': med_magdev, 'n_epochs': nobs}
 
     return out
 
