@@ -5,8 +5,10 @@ from astropy.timeseries.periodograms.lombscargle.implementations.utils import tr
 from astropy.timeseries.periodograms.lombscargle._statistics import false_alarm_probability as fap
 from astropy.timeseries.periodograms.lombscargle._statistics import false_alarm_level as fal
 from astropy.stats import circvar, circcorrcoef
-from .nfft_utils import complex_exponential_sum
-
+try:
+    from .nfft_utils import complex_exponential_sum
+except:
+    pass
 
 def find_time_field(data):
     fld = 'HJD'
@@ -418,7 +420,7 @@ def fourier_poly_chi2_fit_test(times,
                             build_output_dictionary(alpha_use, beta_use, soln, freq_grid, mag_minus_mean, inverr2, normalization="chi2",
                                     nterms=nterms, **kwargs),
                             freq_dict)
-        
+
         aic = (.5 * results[nterms]['lsq_chi_squared'] + 2 * nterms) * 2
         if use_bic:
             aic = results[nterms]['lsq_chi_squared'] + np.log(len(mag)) * (2 * nterms)

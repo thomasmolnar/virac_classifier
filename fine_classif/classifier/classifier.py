@@ -14,8 +14,9 @@ class variable_classification(classification):
                            "ks_p100_p0_over_error","ks_p99_p1_over_error",
                            "ks_p95_p5_over_error","ks_p84_p16_over_error","ks_p75_p25_over_error",
                            'amp_0', 'amp_1', 'amp_2', 'amp_3', 
+                           'amp_double_0', 'amp_double_1', 'amp_double_2', 'amp_double_3', 
                            'amplitude', 'beyondfrac', 'delta_loglik', 'lsq_period',
-                           'max_pow', 'max_time_lag', 'pow_mean_disp', 'time_lag_mean', 'log10_fap',
+                           'max_pow', 'max_phase_lag', 'pow_mean_disp', 'time_lag_mean', 'log10_fap',
                            'phi1_phi0_x','phi2_phi0_x','phi3_phi0_x', 
                            'phi2_phi1_x', 'phi3_phi1_x', 'phi3_phi2_x',
                            'phi1_phi0_y','phi2_phi0_y','phi3_phi0_y', 
@@ -34,6 +35,8 @@ class variable_classification(classification):
                                   'phi1_phi0_double','phi2_phi0_double','phi3_phi0_double', 
                                    'phi2_phi1_double', 'phi3_phi1_double', 'phi3_phi2_double']
         
+        self.no_upper_features = ['JK_col', 'HK_col']
+        
         self.target_cols = ['var_class']
         
         self.log_transform_cols = ["ks_stdev","ks_mad","ks_kurtosis","ks_skew",
@@ -45,11 +48,13 @@ class variable_classification(classification):
                                    "ks_p95_p5_over_error","ks_p84_p16_over_error","ks_p75_p25_over_error",
                                    'amp_0', 'amp_1', 'amp_2', 'amp_3', 
                                    'amp_double_0', 'amp_double_1', 'amp_double_2', 'amp_double_3', 
-                                   'lsq_period',
+                                   'lsq_period', 'delta_loglik',
                                    'amplitude', 'beyondfrac', 'log10_fap',
-                                   'max_pow', 'max_time_lag', 'pow_mean_disp', 'time_lag_mean',
+                                   'max_pow', 'max_phase_lag', 'pow_mean_disp', 'time_lag_mean',
                                    'a0_a1', 'a0_a2', 'a0_a3', 'a1_a2', 'a1_a3', 'a2_a3',
-                                   'a0_a1_double', 'a0_a2_double', 'a0_a3_double', 'a1_a2_double', 'a1_a3_double', 'a2_a3_double']
+                                   'a0_a1_double', 'a0_a2_double', 'a0_a3_double', 
+                                   'a1_a2_double', 'a1_a3_double', 'a2_a3_double',
+                                   'JK_col','HK_col']
         
         self.training_set = self.run(training_set, plot_name, int(config['var_cores']))
         

@@ -100,12 +100,14 @@ def extract_per_feats(lc_dfs, input_df, ls_kwargs, method_kwargs,
     
     """
     if serial:
-        features = [source_feat_extract(lc, ls_kwargs=ls_kwargs,
-                    method_kwargs=method_kwargs, config=config) for lc in lc_dfs]
+        features = [source_feat_extract(data, ls_kwargs=ls_kwargs,
+                    method_kwargs=method_kwargs, config=config) 
+                    for data in zip(input_df['ra'].values, input_df['dec'].values, lc_dfs)]
     else:
         with Pool(int(config['var_cores'])) as p:
-            features = p.map(partial(source_feat_extract, ls_kwargs=ls_kwargs,
-                                     method_kwargs=method_kwargs, config=config), lc_dfs)
+            features = p.starmap(partial(source_feat_extract, ls_kwargs=ls_kwargs,
+                                     method_kwargs=method_kwargs, config=config), 
+                                 zip(input_df['ra'].values, input_df['dec'].values, lc_dfs))
     
     feature_df = pd.DataFrame.from_dict(features)
 

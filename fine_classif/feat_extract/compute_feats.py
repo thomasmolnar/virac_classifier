@@ -16,6 +16,7 @@ from astropy.timeseries.periodograms.lombscargle._statistics import false_alarm_
 
 from astropy.utils.iers import IERS_A_URL, IERS_B_URL, conf
 from astropy.utils.data import download_file
+
 conf.auto_download = True
 download_file(IERS_A_URL, cache="update")
 download_file(IERS_B_URL, cache="update")
@@ -258,7 +259,7 @@ def sigclipper(data, sig_thresh=4.):
         drop=True)
 
 
-def source_feat_extract(lc, config, ls_kwargs={}, method_kwargs={}):
+def source_feat_extract(data, config, ls_kwargs={}, method_kwargs={}):
     """
     Wrapper to extract all features for a given
     source light curve (panda format).
@@ -281,8 +282,9 @@ def source_feat_extract(lc, config, ls_kwargs={}, method_kwargs={}):
     """
     tot_s = tt.time()
     pp_s = tt.time()
-    # Split source info
-    ra, dec = lc['ra'].values[0], lc['dec'].values[0]
+    
+    ra, dec, lc = data
+    
     sourceid = lc['sourceid'].values[0]
     
     # Correct MJD to HJD
@@ -346,7 +348,7 @@ def source_feat_extract(lc, config, ls_kwargs={}, method_kwargs={}):
             per_feats['log10_fap'] = -323.
         
         lag_s = tt.time()
-        lag_feats = find_lag(times, period=per_dict['ls_period'])
+        lag_feats = find_lag(times, period=per_feats['lsq_period'])
         lag_time = tt.time()-lag_s
         
         times = dict(pp_time=pp_time, np_time=np_time, ls_time=ls_time, lsq_time=lsq_time, lag_time=lag_time)

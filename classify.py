@@ -1,14 +1,16 @@
 from config import *
 import pandas as pd
+import time
 import pickle
 import numpy as np
-import sqlutilpy as sqlutil
 from functools import partial
 from multiprocessing import Pool
+
 from initial_classif.classifier.classifier import binary_classification
 from fine_classif.classifier.classifier import variable_classification
+from fine_classif.feat_extract.extract_feats import extract_per_feats
 from interface_utils.add_stats import pct_diff, main_string, var_string, phot_string, error_ratios
-from run_variable_classifier import save_cols, save_cols_types
+from run_variable_classifier import save_cols_types
 from interface_utils.light_curve_loader import lightcurve_loader
 
 def wrap(l):
@@ -21,13 +23,17 @@ def get_periodic_features(data, lightcurve_loader, config, serial=True):
     """
     
     # Load variable light curves in pd format
-    lc = lightcurve_loader.split_lcs(data)
-    
+    lc, data = lightcurve_loader.split_lcs(data)
+   
     # Universal frequency grid conditions 
     ls_kwargs = {'maximum_frequency': np.float64(config['ls_max_freq'])}
+    method_kwargs = dict(irreg=True)
         
     #Extract features
-    features = extract_per_feats(lc, data, ls_kwargs, config, serial=serial)
+    features = extract_per_feats(lc, data, ls_kwargs, method_kwargs, config, serial=serial)
+    
+    features['max_phase_lag'] = features['max_time_lag']/features['lsq_period']
+    del features['max_time_lag']
     
     return features
 
@@ -62,50 +68,64 @@ def find_cells(input_data, grid):
 def classify_region(grid, variable_classifier, lightcurve_loader, 
                     config, hpx_table_index):
     
+    initial_time = time.time()
+    
     hfltr = lightcurve_loader.healpix_grid['index']==hpx_table_index
     
     input_data = lightcurve_loader.get_data_table_per_file(
                     lightcurve_loader.healpix_grid['hpx'].values[hfltr][0], 
                     lightcurve_loader.healpix_grid['nside'].values[hfltr][0], 
                     config)
-    
+
     if int(config['test']):
-        input_data = input_data.sample(10)
+        input_data = input_data.sample(100, random_state=42)
     
     cell = find_cells(input_data, grid)
     
     def run_cell(index):
-        with open(config['binary_output_dir'] + 'binary_%i%s.pkl'%(index,''+'_test'*int(config['test'])), 'rb') as f:
+        with open(config['binary_output_dir'] + 'binary_%i.pkl'%index, 'rb') as f:
             binary_classifier = pickle.load(f)
+            if ~hasattr(binary_classifier, 'periodic_features'):
+                binary_classifier.periodic_features=[]
+            if ~hasattr(binary_classifier, 'no_upper_features'):
+                binary_classifier.no_upper_features=[]
         clss = binary_classifier.predict(input_data[cell==index].reset_index(drop=True))
         return clss
     
     binary_output = pd.concat([run_cell(index) for index in np.unique(cell)], axis=0).sort_values(by='sourceid')
     
     variable_candidates = binary_output[(binary_output['class']=='VAR')&
-                                     (binary_output['prob']>np.float64(config['probability_thresh']))].reset_index(drop=True)
-    print('%i/%i variable candidates' % (len(variable_candidates), len(binary_output)))
+                                     (np.float64(binary_output['prob'])>np.float64(config['probability_thresh']))].reset_index(drop=True)
+    print('Healpix {0}: {1}/{2} variable candidates'.format(hpx_table_index, len(variable_candidates), len(binary_output)))
     
     variable_candidates = get_periodic_features(variable_candidates, lightcurve_loader, config)
     variable_candidates = variable_candidates[~variable_candidates['error']].reset_index(drop=True)
     
     variable_output = variable_classifier.predict(variable_candidates)
-    
-    variable_output[save_cols].astype(save_cols_types).to_pickle(
+
+    variable_output[save_cols_types.keys()].astype(save_cols_types).to_pickle(
         config['results_dir'] + 'results_%i%s.pkl'%(hpx_table_index,''+'_test'*int(config['test'])))
     
+    final_time = time.time()
+    
+    output_ = ''
+    for ii in np.unique(variable_output['class']):
+        output_+='{0}:{1},'.format(ii, np.count_nonzero(variable_output['class']==ii))
+    output_ = output_[:-1]
+    
+    print('Healpix {0}: run in {1}s: {2}'.format(hpx_table_index, final_time-initial_time, output_))
+        
     
 if __name__=="__main__":
     
     config = configuration()
-    config.request_password()
     
-    grid = pd.read_pickle(config['binary_output_dir'] + 'grid%s.pkl'%(''+'_test'*int(config['test'])))
+    grid = pd.read_pickle(config['binary_output_dir'] + 'grid.pkl')
     
-    with open(config['variable_output_dir'] + 'variable%s.pkl'%(''+'_test'*int(config['test'])), 'rb') as f:
+    with open(config['variable_output_dir'] + 'variable_classifier.pkl', 'rb') as f:
         variable_classifier = pickle.load(f)
-    
-    light_curve_loader = lightcurve_loader()
+
+    light_curve_loader = lightcurve_loader(config['healpix_files_dir'])
     indices = light_curve_loader.healpix_grid['index'].values
     
     if int(config['test']):

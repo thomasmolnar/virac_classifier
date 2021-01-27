@@ -87,12 +87,94 @@ def get_periodic_features_var(data, config, serial=True):
     return total_features
 
 
+def get_periodic_features_mira_sample(config, serial=False):
+    
+    variable_output_dir = str(config['variable_output_dir'])
+    
+    if os.path.isfile(variable_output_dir+'variable_features_mira.pkl'):
+        with open(variable_output_dir+'variable_features_mira.pkl', 'rb') as f:
+            total_features = pickle.load(f)
+        return total_features
+    
+    mira_table = pd.read_csv('mira_sample.csv')
+    
+    mira_ids = ','.join(np.str(s) for s in mira_table['virac_id'].values)
+    
+    from interface_utils.add_stats import main_string, var_string, pct_diff, phot_string, error_ratios
+    
+    dsets = pd.DataFrame(
+            sqlutil.get("""with t as (
+                            select {0} from 
+                            leigh_smith.virac2 as t where t.sourceid in ({3}))
+                            select {0}, {2}, {1} from t
+                            inner join leigh_smith.virac2_photstats as y on y.sourceid=t.sourceid
+                            inner join leigh_smith.virac2_var_indices as s on s.sourceid=t.sourceid;
+                            """.format(main_string, var_string, phot_string, mira_ids),
+                        **config.wsdb_kwargs))
+
+    ## Now filter
+    dsets = dsets[(dsets['ks_n_detections']>np.int64(config['n_detection_threshold']))&
+                  (dsets['ks_b_ivw_mean_mag']>np.float64(config['lower_k']))&
+                  (dsets['ks_b_ivw_mean_mag']<np.float64(config['upper_k']))].reset_index(drop=True)
+    
+    mira_ids = ','.join(np.str(s) for s in dsets['sourceid'].values)
+
+    lcs = pd.DataFrame(sqlutil.get('''select sourceid, 
+                                unnest(mjdobs) as mjdobs,
+                                unnest(mag) as mag,
+                                unnest(emag) as emag,
+                                unnest(chi) as chi,
+                                unnest(ast_res_chisq) as ast_res_chisq,
+                                unnest(ambiguous_match) as ambiguous_match  
+                                from leigh_smith.virac2_ts_jason_gcen
+                                where sourceid in ({0})'''.format(mira_ids,),
+                     **config.wsdb_kwargs))
+    
+    dsets = pct_diff(dsets)
+    dsets = error_ratios(dsets)
+    dsets['var_class']='MIRA'
+    
+    dsets = dsets.sort_values(by='sourceid').reset_index(drop=True)
+    lcs = lcs.sort_values(by='sourceid').reset_index(drop=True)
+    uniq_ids, indices, inv_ids = np.unique(lcs['sourceid'], return_index=True, return_inverse=True)
+    indices = indices[1:]
+    
+    ras_full = dsets['ra'].values[inv_ids]
+    decs_full = dsets['dec'].values[inv_ids]
+    
+    ts_dict = {c: np.split(lcs[c], indices) for c in list(lcs.keys())}
+    ra_dict = dict(ra=np.split(ras_full, indices))
+    dec_dict = dict(dec=np.split(decs_full, indices))
+
+    datadict = {**ts_dict, **ra_dict, **dec_dict}
+    lightcurves = [
+        pd.DataFrame(dict(list(zip(datadict, t))))
+        for t in zip(*list(datadict.values()))
+    ]
+    
+    print(len(dsets), len(lightcurves))
+    
+    # Universal frequency grid conditions 
+    ls_kwargs = dict(maximum_frequency=np.float64(config['ls_max_freq']),
+                     minimum_frequency=np.float64(config['ls_min_freq']))
+    method_kwargs = dict(irreg=True)
+    
+    #Extract features
+    total_features = extract_per_feats(lightcurves,
+                                       dsets, ls_kwargs, method_kwargs,
+                                       config, serial=serial)
+    
+    total_features.to_pickle(variable_output_dir+'variable_features_mira.pkl')
+    
+    return total_features
+    
+
 save_cols_types = dict(zip(['amp_0', 'amp_1', 'amp_2', 'amp_3', 
                  'amp_double_0', 'amp_double_1', 'amp_double_2', 'amp_double_3', 
                  'amplitude', 'beyondfrac', 'delta_loglik', 
                  'ls_period', #'ls_period_error', 
                  'lsq_period',
-                 'max_pow', 'max_time_lag', 'pow_mean_disp', 'time_lag_mean',
+                 'max_pow', 'max_phase_lag', 'pow_mean_disp', 'time_lag_mean',
                  'phi_0','phi_1','phi_2','phi_3',
                  'phi_double_0','phi_double_1','phi_double_2','phi_double_3',
                  'JK_col','HK_col','prob'],[np.float32]*29))
@@ -117,27 +199,55 @@ def generate_secondstage_training(config):
     return trainset
 
 def generate_periodic_features(config):
+    
     print("Loading trainset...")
+    
     trainset = generate_secondstage_training(config)
     #trainset[['sourceid', 'gaia_sourceid']].to_csv(str(config['variable_output_dir'])+'/variable_training_set_edr3_sourceid.csv',
     #                              index=False)
+    
     print("---Trainset loaded - {} stars".format(len(trainset)))
     print("Loading periodic features...")
+    
     features = get_periodic_features_var(trainset, config, serial=False)
+    
+    mira = get_periodic_features_mira_sample(config)
+    
+    features = pd.concat([features, mira], axis=0).reset_index(drop=True)
+    
+    features['max_phase_lag'] = features['max_time_lag']/features['lsq_period']
+    del features['max_time_lag']
+    
     return features
+
+def combine_var_class(v):
+    
+    for ii in ['MIRA', 'OSARG', 'SRV']:
+        v.loc[v['var_class']==ii, 'var_class'] = 'LPV'
+    for ii in ['RRc', 'RRd']:
+        v.loc[v['var_class']==ii, 'var_class'] = 'RRcd'
+        
+    return v
 
 if __name__=="__main__":
     
     config = configuration()
     config.request_password()
-
+    
     features = generate_periodic_features(config)
 
     features= features[~features['error']].reset_index(drop=True)
     
-    features = features[(features['log10_fap']<np.float64(config['log10_fap']))].reset_index(drop=True)
+    features = features[(features['var_class']=='CONST')|(features['log10_fap']<np.float64(config['log10_fap']))].reset_index(drop=True)
+    
+    features = features[~(features['var_class']=='DSCT')].reset_index(drop=True)
     
     features = features[~((features['var_class']=='EA/EB')&~(features['significant_second_minimum']))].reset_index(drop=True)
+    
+    for ii in np.unique(features['var_class']):
+        print(ii, np.count_nonzero(features['var_class']==ii))
+    
+    features = combine_var_class(features)
     
     classifier = variable_classification(features, config)
     

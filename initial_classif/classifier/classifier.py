@@ -12,9 +12,11 @@ try:
     from sklearn.metrics import ConfusionMatrixDisplay
 except:
     pass
-import xgboost
-import lightgbm
-
+try:
+    import xgboost
+    import lightgbm
+except:
+    pass
 
 def classif_report(y_test, y_pred, classes, plot_name):
     
@@ -78,9 +80,6 @@ class classification(object):
 
         """
         
-#         with np.errstate(invalid='ignore'):
-#             df[self.log_transform_cols] = np.log(df[self.log_transform_cols])
-            
         for i in self.periodic_features:
             df[i + '_x'] = np.cos(df[i])
             df[i + '_y'] = np.sin(df[i])
@@ -101,7 +100,9 @@ class classification(object):
             eff_sigma = .25*np.diff(np.nanpercentile(df[i], [5., 95.]))[0]
             eff_median = np.nanpercentile(df[i], 50.)
             bot, top = eff_median-Nsigma*eff_sigma, eff_median+Nsigma*eff_sigma
-            fltr &= ~((df[i]<bot)|(df[i]>top))   
+            fltr &= ~(df[i]<bot)
+            if i not in self.no_upper_features:
+                fltr &= ~(df[i]>top)
             self.upper_lower_clips[i] = [bot, top]
             print(i, np.count_nonzero(fltr))
             
@@ -176,24 +177,19 @@ class classification(object):
     def predict(self, y):
         
         yinp = y.copy()
-        yinp = y[self.data_cols].replace([np.inf, -np.inf], np.nan)
+        
+        for i in self.periodic_features:
+            yinp[i + '_x'] = np.cos(yinp[i])
+            yinp[i + '_y'] = np.sin(yinp[i])
+            
+        yinp = yinp[self.data_cols].replace([np.inf, -np.inf], np.nan)
         with np.errstate(invalid='ignore'):
             yinp[self.log_transform_cols] = self.ptransformer.transform(yinp[self.log_transform_cols])
         
-        fltr = [True] * len(yinp)
-        for ii in self.upper_lower_clips.keys():
-            fltr &= ~((yinp[ii]<self.upper_lower_clips[ii][0])|(yinp[ii]>self.upper_lower_clips[ii][1]))
-        
-#         if self.impute_values is not None:
-#             for ii in self.impute_values.keys():
-#                 yinp.loc[yinp[ii]!=yinp[ii],ii] = self.impute_values[ii]
         if self.imputer is not None:
             yinp[self.data_cols] = self.imputer.transform(yinp[self.data_cols].values)
                 
-        print('%i/%i clipped'%(np.count_nonzero(~fltr),len(y)))
-        
-        yinp = self.sc.transform(yinp[fltr].reset_index(drop=True))
-        y = y[fltr].reset_index(drop=True)
+        yinp = self.sc.transform(yinp)
         
         y['class'] = self.model.predict(yinp)
         prob = self.model.predict_proba(yinp)
@@ -219,7 +215,8 @@ class binary_classification(classification):
                            "ks_p95_p5_over_error","ks_p84_p16_over_error","ks_p75_p25_over_error"
                          ]
         
-        self.periodic_features = None
+        self.periodic_features = []
+        self.no_upper_features = []
         
         self.target_cols = ['var_class']
         

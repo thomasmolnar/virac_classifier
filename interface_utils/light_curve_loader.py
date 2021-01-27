@@ -1,17 +1,16 @@
 import os
 import numpy as np
 import h5py
-from healpy import ring2nest
 import pandas as pd
 from astropy.coordinates import SkyCoord
 from astropy.table import Table, vstack, hstack
 from astropy_healpix import healpix_to_lonlat, level_ipix_to_uniq, nside_to_level
+from astropy_healpix.healpy import ring2nest
 from interface_utils.add_stats import main_table_cols, phot_stats, var_indices, pct_diff, error_ratios
 
 
 MAXNSIDE=1024
 
-file_path = '/data/jls/virac/'
 thispath=os.path.dirname(os.path.abspath(__file__))+'/'
 
 import time
@@ -33,10 +32,12 @@ class lightcurve_loader(object):
         a 2d array (catid, sourceid) are probably superior.
        
     """
-    def __init__(self, input_file='ns_hpx.dat'):
+    def __init__(self, file_path, input_file='ns_hpx.dat'):
         """
             Input file is the list of healpix into which the data is split (columns nside, index)
         """
+        
+        self.file_path = file_path
         
         self.healpix_grid = pd.read_csv(thispath + 'ns_hpx.dat', names=['nside','hpx'])
         assert np.all(self.healpix_grid['nside']<=MAXNSIDE)
@@ -56,9 +57,9 @@ class lightcurve_loader(object):
         self.healpix_grid.reset_index(drop=True,inplace=True)
     
     def get_lcdata_per_file(self, hpx, ns, sources):
-            if not os.path.isfile(file_path + 'n%i_%i.hdf5' % (ns, hpx)):
+            if not os.path.isfile(self.file_path + 'n%i_%i.hdf5' % (ns, hpx)):
                 return Table([])
-            with h5py.File(file_path + 'n%i_%i.hdf5' % (ns, hpx), "r") as f:
+            with h5py.File(self.file_path + 'n%i_%i.hdf5' % (ns, hpx), "r") as f:
                 
                 ci = f["catIndex"]
                 sourceids = f['sourceList']['sourceid'][:]
@@ -102,10 +103,10 @@ class lightcurve_loader(object):
             
     def get_data_table_per_file(self, hpx, ns, config):
         
-            if not os.path.isfile(file_path + 'n%i_%i.hdf5' % (ns, hpx)):
+            if not os.path.isfile(self.file_path + 'n%i_%i.hdf5' % (ns, hpx)):
                 return Table([])
             
-            with h5py.File(file_path + 'n%i_%i.hdf5' % (ns, hpx), "r") as f:
+            with h5py.File(self.file_path + 'n%i_%i.hdf5' % (ns, hpx), "r") as f:
         
                 sl_has_var_idx = f["sourceList/has_variabilityIndices"][:]
                 assert np.all((f["sourceList/sourceid"][sl_has_var_idx] - 
@@ -159,14 +160,14 @@ class lightcurve_loader(object):
         uniq_bunches = np.split(sourceid[sorted_], uniq_indx[1:])
     
         # Loop through files
-        df = vstack([self.get_lcdata_per_file(hpx,ns,sources) for hpx, ns, sources 
+        df = vstack([self.get_lcdata_per_file(hpx, ns,sources) for hpx, ns, sources 
                      in zip(uniq_files, nside[sorted_][uniq_indx], uniq_bunches)])
         if len(df):
-            df.rename_columns(["hfad_mag", "hfad_emag"],["mag","error"])
+            df.rename_columns(["hfad_mag", "hfad_emag"],["mag","emag"])
         
         return df
 
-    def split_lcs(self,data):
+    def split_lcs(self, data):
         """
         Split Astropy Table of lightcurves into list of pandas for each light curve
         (ordered sourceid column not needed)
@@ -188,19 +189,13 @@ class lightcurve_loader(object):
         if len(out_sourceids) != len(set(out_sourceids)):
             assert ValueError("Duplicates found in sourceid list")
 
-        #Find indices to sort loaded output ids/input ids
-        ind_out = list(np.argsort(out_sourceids))
-        ind_inp = list(np.argsort(inp_sourceids))
-
-        #Import sorted equatorial positions (check column names)
-        source_ra, source_dec = data['ra'].values[ind_inp], data['dec'].values[ind_inp]
-
+        #Sort data by sourceid
+        data = data.sort_values(by='sourceid').reset_index(drop=True)
+        
         #Sort lc dataframe
-        sorted_lc = [lc_df[i] for i in ind_out]
+        sorted_lc = [lc_df[i] for i in np.argsort(out_sourceids)]
 
-        lc_pos =[[ra, dec, _lc] for ra, dec, _lc in zip(source_ra, source_dec, sorted_lc)]
-
-        return lc_pos
+        return sorted_lc, data
     
     
 def run_tests():

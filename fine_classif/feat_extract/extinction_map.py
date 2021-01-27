@@ -5,7 +5,7 @@ from astropy.coordinates import SkyCoord
 import astropy.units as u
 from astropy_healpix import *
 
-from healpy import ring2nest
+from astropy_healpix.healpy import ring2nest
 
 
 class extinction_map_healpix(object):
