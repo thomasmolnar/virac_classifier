@@ -170,7 +170,7 @@ def get_periodic_features_mira_sample(config, serial=False):
     
 col32_save = ['amp_0', 'amp_1', 'amp_2', 'amp_3', 
               'amp_double_0', 'amp_double_1', 'amp_double_2', 'amp_double_3', 
-              'amplitude', 'beyondfrac', 'delta_loglik', 
+              'amplitude', 'beyondfrac', 'delta_loglik', 'log10_fap',
               'ls_period','lsq_period', 'max_pow', 'max_phase_lag', 'pow_mean_disp', 'time_lag_mean',
               'phi_0','phi_1','phi_2','phi_3',
               'phi_double_0','phi_double_1','phi_double_2','phi_double_3',           
