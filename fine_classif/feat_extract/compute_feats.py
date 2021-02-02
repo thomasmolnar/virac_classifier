@@ -342,10 +342,17 @@ def source_feat_extract(data, config, ls_kwargs={}, method_kwargs={}):
             
         # compute false-alarm probability
         fap_ = fap(per_feats['lsq_power'],ls_kwargs['maximum_frequency'], times, mags, errors)
+        fapls_ = fap(per_dict['max_pow'],ls_kwargs['maximum_frequency'], times, mags, errors)
+        
         if fap_ > 0.:
             per_feats['log10_fap'] = np.log10(fap_)
         else:
             per_feats['log10_fap'] = -323.
+            
+        if fapls_ > 0.:
+            per_feats['log10_fap_ls'] = np.log10(fapls_)
+        else:
+            per_feats['log10_fap_ls'] = -323.
         
         lag_s = tt.time()
         lag_feats = find_lag(times, period=per_feats['lsq_period'])
@@ -359,10 +366,17 @@ def source_feat_extract(data, config, ls_kwargs={}, method_kwargs={}):
         
         # compute false-alarm probability
         fap_ = fap(per_feats['lsq_power'],ls_kwargs['maximum_frequency'], times, mags, errors)
+        fapls_ = fap(per_dict['max_pow'],ls_kwargs['maximum_frequency'], times, mags, errors)
+        
         if fap_ > 0.:
             per_feats['log10_fap'] = np.log10(fap_)
         else:
             per_feats['log10_fap'] = -323.
+            
+        if fapls_ > 0.:
+            per_feats['log10_fap_ls'] = np.log10(fapls_)
+        else:
+            per_feats['log10_fap_ls'] = -323.
         
         lag_feats = find_lag(times, period=per_feats['lsq_period'])
         

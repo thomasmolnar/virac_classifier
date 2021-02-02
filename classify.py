@@ -1,4 +1,5 @@
 from config import *
+import sys
 import pandas as pd
 import time
 import pickle
@@ -131,6 +132,8 @@ def classify_region(grid, variable_classifier, lightcurve_loader,
     variable_candidates = variable_candidates.rename(columns={"prob": "prob_1st_stage"})
     
     variable_candidates = get_periodic_features(variable_candidates, lightcurve_loader, config)
+    variable_candidates['log10_fap'] = variable_candidates['log10_fap_ls']
+    del variable_candidates['log10_fap_ls']
     variable_candidates = variable_candidates[~variable_candidates['error']].reset_index(drop=True)
     
     variable_output = variable_classifier.predict(variable_candidates)
@@ -141,8 +144,10 @@ def classify_region(grid, variable_classifier, lightcurve_loader,
     final_time = time.time()
     
     output_ = ''
-    for ii in np.unique(variable_output['class']):
-        output_+='{0}:{1},'.format(ii, np.count_nonzero(variable_output['class']==ii))
+    for ii in list(set(np.unique(variable_output['class']))-set(['CONST'])):
+        output_+='{0}:{1},'.format(ii, np.count_nonzero((variable_output['class']==ii)&
+                                                        (variable_output['log10_fap']<np.float64(config['log10_fap']))&
+                                                        (variable_output['prob']>0.8)))
     output_ = output_[:-1]
     
     print('Healpix {0}: run in {1}s: {2}'.format(hpx_table_index, final_time-initial_time, output_))
@@ -162,8 +167,15 @@ if __name__=="__main__":
     indices = light_curve_loader.healpix_grid['index'].values
     
     if int(config['test']):
-        indices = [7380776]
+        chunked_indices_subset = [7380776]
+    else:
+        assert len(sys.argv)==3
+        chunk_index = int(sys.argv[1])
+        n_chunks = int(sys.argv[2])
+        chunked_indices = np.array_split(indices, n_chunks)
+        chunked_indices_subset = chunked_indices[chunk_index]
     
     with Pool(np.int64(config['var_cores'])) as pool:
-        pool.map(partial(classify_region, grid, variable_classifier, light_curve_loader, config), 
-                     indices)
+        pool.map(partial(classify_region, grid, variable_classifier, 
+                         light_curve_loader, config), 
+                 chunked_indices_subset)

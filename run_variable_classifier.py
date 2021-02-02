@@ -235,6 +235,8 @@ if __name__=="__main__":
     config.request_password()
     
     features = generate_periodic_features(config)
+    features['log10_fap'] = features['log10_fap_ls']
+    del features['log10_fap_ls']
 
     features= features[~features['error']].reset_index(drop=True)
     
