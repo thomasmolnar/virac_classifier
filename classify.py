@@ -76,7 +76,8 @@ save_cols = [
     'phi_0','phi_1','phi_2','phi_3',
     'phi_double_0','phi_double_1','phi_double_2','phi_double_3',
     'peak_ratio_model', 'peak_ratio_data',
-    'JK_col','HK_col', 'prob_1st_stage'
+    'JK_col','HK_col', 'prob_1st_stage',
+    'Z_scale','Z_model','Y_scale','Y_model','J_scale','J_model','H_scale','H_model'
 ]
 
 col32_save = [
@@ -87,7 +88,8 @@ col32_save = [
     'phi_0','phi_1','phi_2','phi_3',
     'phi_double_0','phi_double_1','phi_double_2','phi_double_3',           
     'peak_ratio_model', 'peak_ratio_data',
-    'JK_col','HK_col','prob', 'prob_1st_stage'
+    'JK_col','HK_col','prob', 'prob_1st_stage',
+    'Z_scale','Z_model','Y_scale','Y_model','J_scale','J_model','H_scale','H_model'
 ]
 
 save_cols_types = dict(zip(col32_save,[np.float32]*len(col32_save)))
@@ -135,7 +137,7 @@ def classify_region(grid, variable_classifier, lightcurve_loader,
     variable_candidates['log10_fap'] = variable_candidates['log10_fap_ls']
     del variable_candidates['log10_fap_ls']
     variable_candidates = variable_candidates[~variable_candidates['error']].reset_index(drop=True)
-    
+
     variable_output = variable_classifier.predict(variable_candidates)
     
     variable_output[save_cols].astype(save_cols_types).to_pickle(

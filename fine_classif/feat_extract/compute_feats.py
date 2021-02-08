@@ -1,4 +1,5 @@
 from scipy import stats
+from scipy.optimize import leastsq
 import numpy as np
 import pandas as pd
 import math
@@ -258,6 +259,100 @@ def sigclipper(data, sig_thresh=4.):
     return data[np.abs(data['mag'].values - midd) / stdd < sig_thresh].reset_index(
         drop=True)
 
+ivw_ = lambda m, e: np.nansum(m/e**2)/np.nansum(1./e**2)
+    
+def contemp_mag_scatter_ratio(lc, lc_ref, tthresh=1./24.):
+    """
+        Find the ratio of the magnitude of light curve lc compared to 'contemporaneous' 
+        (within threshold tthresh) in light curve lc_ref
+    """
+    Jtimes, Jmag, Jmag_err = lc['HJD'].values, lc['mag'].values, lc['emag'].values
+    meanJ = ivw_(Jmag,Jmag_err)
+
+    Ktimes, Kmag, Kmag_err = lc_ref['HJD'].values, lc_ref['mag'].values, lc_ref['emag'].values
+    meanK = ivw_(Kmag,Kmag_err)
+
+    tdiffs = np.abs(Jtimes[:,np.newaxis] - Ktimes[np.newaxis,:])
+    tmin = np.min(tdiffs, axis=1)
+    tamin = np.argmin(tdiffs, axis=1)
+
+    fltrT = (tmin<tthresh)
+    if np.count_nonzero(fltrT)==0:
+        return np.nan, np.nan
+    mean_k_err = np.nanmedian(Kmag_err[tamin][fltrT])
+    mean_j_err = np.nanmedian(Jmag_err[fltrT])
+
+    Jscatter = ivw_((Jmag[fltrT]-meanJ)**2,Jmag_err[fltrT])
+    if Jscatter > mean_j_err**2:
+        Jscatter -= mean_j_err**2
+    Kscatter = ivw_((Kmag[tamin][fltrT]-meanK)**2,Kmag_err[tamin][fltrT])
+    if Kscatter > mean_k_err**2:
+        Kscatter -= mean_k_err**2
+    
+    abs_ratio = ivw_(np.abs((Jmag[fltrT]-meanJ)/(Kmag[tamin][fltrT]-meanK)), 
+                     np.sqrt(Jmag_err[fltrT]*Kmag_err[tamin][fltrT]))
+
+    return np.sqrt(Jscatter / Kscatter), abs_ratio
+
+def data_scatter_wrt_model(lc, amplitudes, phases, period):
+    """
+        Compare the scatter in magnitudes of lightcurve lc with a fitted Fourier model 
+        characterised by amplitudes, phases and period.
+        Compares the data with the corresponding model points and also computes the best-fitting
+        factor by which to scale the light curve to match the data.
+    """
+    
+    if np.isnan(period) | np.any(np.isnan(amplitudes)) | np.any(np.isnan(phases)) | (len(lc)<2):
+        return np.nan, np.nan
+    
+    phase = (lc['HJD'] % period) * (2. * np.pi) / period
+    n = np.arange(1, len(amplitudes)+1)
+    mag = np.sum(amplitudes[:,np.newaxis] * np.cos(n[:,np.newaxis]*phase[np.newaxis,:]+phases[:,np.newaxis]), axis=0)
+
+    meanJ = ivw_(lc['mag'].values,lc['emag'].values)
+    meanK = ivw_(mag,lc['emag'].values)
+    mean_err = np.nanmedian(lc['emag'].values)
+
+    Jscatter = ivw_((lc['mag'].values-meanJ)**2,lc['emag'].values)
+    if Jscatter > mean_err**2:
+        Jscatter -= mean_err**2
+    Kscatter = ivw_((mag-meanK)**2, lc['emag'].values)
+
+    if len(lc['mag'].values)>2:
+        params=leastsq(lambda p: (mag*p[1]**2-(lc['mag'].values-meanJ)-p[0])/lc['emag'].values, [0.,1.])[0]
+        spread = params[1]**2
+        if(spread<1e-4):
+            spread=np.nan
+    else:
+        spread=np.nan
+
+    return np.sqrt(Jscatter / Kscatter), spread
+
+def colour_scatter(lc_all, lc_ref, features):
+    
+    amplitudes = np.array([features['amp_%i'%kk] for kk in range(4)])
+    phases = np.array([features['phi_%i'%kk] for kk in range(4)])
+    
+    rslt = {}
+    fltr = {1:'Z',2:'Y',3:'J',4:'H',5:'Ks'}
+    
+    for fid in range(1,5):
+        
+        lc = sigclipper(lc_all[lc_all['filterid']==fid].reset_index(drop=True))
+        lc = lc.sort_values(by='HJD').reset_index(drop=True)
+        rslt['%s_nobs'%fltr[fid]] = len(lc)
+        
+        if rslt['%s_nobs'%fltr[fid]]<=1:
+            rslt['%s_model'%fltr[fid]], rslt['%s_scale'%fltr[fid]] = np.nan, np.nan
+            rslt['%s_contemp_std'%fltr[fid]], rslt['%s_contemp_abs'%fltr[fid]] = np.nan, np.nan
+        else:
+            rslt['%s_model'%fltr[fid]], rslt['%s_scale'%fltr[fid]]  = \
+                data_scatter_wrt_model(lc, amplitudes, phases, features['lsq_period'])
+            rslt['%s_contemp_std'%fltr[fid]], rslt['%s_contemp_abs'%fltr[fid]] = \
+                    contemp_mag_scatter_ratio(lc, lc_ref)
+    
+    return rslt
+
 
 def source_feat_extract(data, config, ls_kwargs={}, method_kwargs={}):
     """
@@ -283,18 +378,23 @@ def source_feat_extract(data, config, ls_kwargs={}, method_kwargs={}):
     tot_s = tt.time()
     pp_s = tt.time()
     
-    ra, dec, lc = data
+    ra, dec, lc_all = data
     
-    sourceid = lc['sourceid'].values[0]
+    sourceid = lc_all['sourceid'].values[0]
     
     # Correct MJD to HJD
-    correct_to_HJD(lc, ra, dec)
+    correct_to_HJD(lc_all, ra, dec)
 
     # Pre-process light curve data with quality cuts and 3 sigma conservative cut 
     chi_cut, ast_cut = float(config['chi_cut']), float(config['ast_cut'])
     amb_corr = int(config['amb_correction'])
     sig_thresh = float(config['sig_thresh'])
-    lc_clean = sigclipper(quality_cut(lc.dropna(subset=['mag', 'emag']), chi_cut, ast_cut, amb_corr), sig_thresh)
+    lc_all = quality_cut(lc_all.dropna(subset=['mag', 'emag']), chi_cut, ast_cut, amb_corr)
+    
+    lc = lc_all[lc_all['filterid']==5].reset_index(drop=True)
+    lc = lc.sort_values(by='HJD').reset_index(drop=True)
+    
+    lc_clean = sigclipper(lc, sig_thresh)
     
     # Length check post quality cuts
     if len(lc_clean)<=int(config['n_detection_threshold']):
@@ -385,4 +485,8 @@ def source_feat_extract(data, config, ls_kwargs={}, method_kwargs={}):
     
     #print('%s feats loaded in %s s'%(sourceid, tt.time()-tot_s))
     
+    colour_feats = colour_scatter(lc_all, lc_clean, features)
+    
+    features = {**features, **colour_feats}
+
     return features

@@ -27,10 +27,11 @@ def get_periodic_features_var(data, config, serial=True):
                                 unnest(mjdobs) as mjdobs,
                                 unnest(mag) as mag,
                                 unnest(emag) as emag,
+                                unnest(filterid) as filterid,
                                 unnest(chi) as chi,
                                 unnest(ast_res_chisq) as ast_res_chisq,
                                 unnest(ambiguous_match) as ambiguous_match  
-                                from leigh_smith.virac2_ts_tmolnar_train''' + ' limit 100000000'*int(config['test']),
+                                from leigh_smith.virac2_ts_tmolnar_train_zyjhk''' + ' limit 100000000'*int(config['test']),
                      **config.wsdb_kwargs))
     print("---Timeseries data loaded.")
     
@@ -125,6 +126,7 @@ def get_periodic_features_mira_sample(config, serial=False):
                                 unnest(emag) as emag,
                                 unnest(chi) as chi,
                                 unnest(ast_res_chisq) as ast_res_chisq,
+                                unnest(filterid) as filterid,
                                 unnest(ambiguous_match) as ambiguous_match  
                                 from leigh_smith.virac2_ts_jason_gcen
                                 where sourceid in ({0})'''.format(mira_ids,),
@@ -213,7 +215,7 @@ def generate_periodic_features(config):
     
     mira = get_periodic_features_mira_sample(config)
     
-    features = pd.concat([features, mira], axis=0).reset_index(drop=True)
+    features = pd.concat([features, mira], axis=0, sort=False).reset_index(drop=True)
     
     features['max_phase_lag'] = features['max_time_lag']/features['lsq_period']
     del features['max_time_lag']
@@ -228,6 +230,50 @@ def combine_var_class(v):
         v.loc[v['var_class']==ii, 'var_class'] = 'RRcd'
         
     return v
+
+
+def cm_decaps(data):
+    ra = data['ra'].values
+    dec = data['dec'].values
+    decaps = pd.DataFrame(
+        sqlutil.local_join(
+            """
+		select 
+        1.0857362048*stdev_g/(mean_g+1e-20) as decaps_g_amp, 
+        1.0857362048*stdev_r/(mean_r+1e-20) as decaps_r_amp, 
+        1.0857362048*stdev_i/(mean_i+1e-20) as decaps_i_amp, 
+        1.0857362048*stdev_z/(mean_z+1e-20) as decaps_z_amp, 
+        nmag_ok_g,
+        q3c_dist(m.ra,m.dec,tt.ra,tt.dec)*3600. as q3c_dist_decaps from mytable as m
+		left join lateral (select * from decaps_dr1.main as s
+		where q3c_join(m.ra, m.dec,s.ra,s.dec,0.4/3600.) 
+		order by q3c_dist(m.ra,m.dec,s.ra,s.dec) asc limit 1)
+		as tt on  true  order by xid """,
+            'mytable', (ra, dec, np.arange(len(dec))), ('ra', 'dec', 'xid'),**config.wsdb_kwargs))
+    for ii in ['g','r','i','z']:
+        fltr = (decaps['decaps_%s_amp'%ii]==0.)
+        decaps['log10_decaps_%s_amp'%ii]=np.nan
+        decaps.loc[~fltr, 'log10_decaps_%s_amp'%ii]=np.log10(decaps['decaps_%s_amp'%ii][fltr])
+        del decaps['decaps_%s_amp'%ii]
+        
+    nsc2 = pd.DataFrame(
+        sqlutil.local_join(
+            """
+		select 
+        rmsvar as nsc2_rmsvar, madvar as nsc2_madvar, 
+        iqrvar as nsc2_iqrvar, etavar as nsc2_etavar,
+        jvar as nsc2_jvar, kvar as nsc2_kvar, 
+        chivar as nsc2_chivar, romsvar as nsc2_romsvar, nsigvar as nsc2_nsigvar,
+        q3c_dist(m.ra,m.dec,tt.ra,tt.dec)*3600. as q3c_dist_nsc2 from mytable as m
+		left join lateral (select * from nsc_dr2.object as s
+		where q3c_join(m.ra, m.dec,s.ra,s.dec,0.4/3600.) 
+		order by q3c_dist(m.ra,m.dec,s.ra,s.dec) asc limit 1)
+		as tt on  true  order by xid """,
+            'mytable', (ra, dec, np.arange(len(dec))), ('ra', 'dec', 'xid'),**config.wsdb_kwargs))
+    
+    decaps = pd.concat([decaps, nsc2], axis=1, sort=False).reset_index(drop=True)
+    
+    return decaps
 
 if __name__=="__main__":
     
@@ -250,6 +296,11 @@ if __name__=="__main__":
         print(ii, np.count_nonzero(features['var_class']==ii))
     
     features = combine_var_class(features)
+    
+#     decaps_features = cm_decaps(features)
+#     pd.concat([features[['var_class']], decaps_features], axis=1, sort=False).reset_index(drop=True).to_pickle(
+#         config['variable_output_dir'] + 'decaps_dataset%s.pkl'%(''+'_test'*int(config['test'])))
+#     features = pd.concat([features, decaps_features], axis=1, sort=False).reset_index(drop=True)
     
     classifier = variable_classification(features, config)
     

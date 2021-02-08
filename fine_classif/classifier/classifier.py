@@ -28,7 +28,19 @@ class variable_classification(classification):
                            'a0_a1', 'a0_a2','a0_a3', 'a1_a2', 'a1_a3', 'a2_a3',
                            'a0_a1_double', 'a0_a2_double', 'a0_a3_double', 'a1_a2_double', 
                            'a1_a3_double', 'a2_a3_double',
-                           'JK_col','HK_col', 'peak_ratio_model', 'peak_ratio_data']
+                           'JK_col','HK_col', 'peak_ratio_model', 'peak_ratio_data',
+                           'Z_scale', 'Z_model',
+                           'Y_scale', 'Y_model',
+                           'J_scale', 'J_model',
+                           'H_scale', 'H_model',
+#                            'log10_decaps_g_amp','log10_decaps_r_amp','log10_decaps_i_amp','log10_decaps_z_amp',
+#                            'nsc2_rmsvar', 'nsc2_madvar', 'nsc2_iqrvar', 'nsc2_etavar', 'nsc2_jvar', 'nsc2_kvar',
+#                            'nsc2_chivar', 'nsc2_romsvar', 'nsc2_nsigvar'
+#                            'Z_contemp_std','Z_contemp_abs',
+#                            'Y_contemp_std','Y_contemp_abs',
+#                            'J_contemp_std','J_contemp_abs',
+#                            'H_contemp_std','H_contemp_abs'
+                         ]
         
         self.periodic_features = ['phi1_phi0','phi2_phi0','phi3_phi0', 
                                    'phi2_phi1', 'phi3_phi1', 'phi3_phi2',
@@ -54,8 +66,20 @@ class variable_classification(classification):
                                    'a0_a1', 'a0_a2', 'a0_a3', 'a1_a2', 'a1_a3', 'a2_a3',
                                    'a0_a1_double', 'a0_a2_double', 'a0_a3_double', 
                                    'a1_a2_double', 'a1_a3_double', 'a2_a3_double',
-                                   'JK_col','HK_col']
+                                   'JK_col','HK_col',
+                                   'Z_scale', 'Z_model',
+                                   'Y_scale', 'Y_model',
+                                   'J_scale', 'J_model',
+                                   'H_scale', 'H_model',
+#                                    'log10_decaps_g_amp','log10_decaps_r_amp','log10_decaps_i_amp','log10_decaps_z_amp',
+#                                    'nsc2_rmsvar', 'nsc2_madvar', 'nsc2_iqrvar', 'nsc2_etavar', 'nsc2_jvar', 'nsc2_kvar',
+#                                    'nsc2_chivar', 'nsc2_romsvar', 'nsc2_nsigvar'
+#                                    'Z_contemp_std','Z_contemp_abs',
+#                                    'Y_contemp_std','Y_contemp_abs',
+#                                    'J_contemp_std','J_contemp_abs',
+#                                    'H_contemp_std','H_contemp_abs'
+                                  ]
         
-        self.training_set = self.run(training_set, plot_name, int(config['var_cores']))
+        self.training_set = self.run(training_set, plot_name, int(config['var_cores']), xgb=True)
         
         

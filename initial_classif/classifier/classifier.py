@@ -2,9 +2,10 @@ import numpy as np
 import pandas as pd
 
 from sklearn.model_selection import cross_validate
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, ExtraTreesRegressor
 from sklearn.preprocessing import RobustScaler
-from sklearn.impute import KNNImputer
+from sklearn.experimental import enable_iterative_imputer
+from sklearn.impute import KNNImputer, IterativeImputer
 from sklearn.model_selection import KFold
 from sklearn.metrics import confusion_matrix, classification_report
 from sklearn.preprocessing import PowerTransformer
@@ -108,6 +109,7 @@ class classification(object):
             
         if impute:
             self.imputer = KNNImputer(n_neighbors=5)
+#             self.imputer = IterativeImputer(estimator=ExtraTreesRegressor(n_estimators=10), verbose=2)
             df[self.data_cols] = self.imputer.fit_transform(df[self.data_cols].values)
         else:
             self.imputer = None

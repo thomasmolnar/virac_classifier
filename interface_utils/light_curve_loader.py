@@ -96,7 +96,8 @@ class lightcurve_loader(object):
                 del data[1]
                 del cols[1]
                 df = Table(data, names=cols)
-                df = df[df['filter']=='Ks']
+                filter_dict = {'Z':1,'Y':2,'J':3,'H':4,'Ks':5}
+                df['filterid'] = [filter_dict[f] for f in df['filter']]
                 del df['filter']
                 
             return df   
