@@ -46,7 +46,7 @@ def find_cells(input_data, grid):
     maxlgridbulge = np.max(grid['l']+.5*grid['sizel'])
     minlgridbulge = np.min((grid['l']-.5*grid['sizel'])[(grid['l']>180.)&(grid['b']>2.5)])
     input_data.loc[(np.abs(input_data['b'])>2.5)&(input_data['l']>maxlgridbulge),'ltmp']=maxlgridbulge
-    input_data.loc[(np.abs(input_data['b'])>2.5)&(input_data['l']<minlgridbulge),'btmp']=minlgridbulge
+    input_data.loc[(np.abs(input_data['b'])>2.5)&(input_data['l']<minlgridbulge),'ltmp']=minlgridbulge
     
     maxbgridbulge = np.max(grid['b']+.5*grid['sizeb'])
     minbgridbulge = np.min(grid['b']-.5*grid['sizeb'])

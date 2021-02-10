@@ -375,8 +375,6 @@ def source_feat_extract(data, config, ls_kwargs={}, method_kwargs={}):
     ['sourceid' 'mjdobs' 'mag' 'error' 'ambiguous_match' 'ast_res_chisq' 'chi']
     
     """
-    tot_s = tt.time()
-    pp_s = tt.time()
     
     ra, dec, lc_all = data
     
@@ -400,8 +398,6 @@ def source_feat_extract(data, config, ls_kwargs={}, method_kwargs={}):
     if len(lc_clean)<=int(config['n_detection_threshold']):
         return {'sourceid':sourceid, 'error':True}
     
-    pp_time = tt.time()-pp_s
-    
     # Timeseries data
     nterms_min, nterms_max = int(config['nterms_min']), int(config['nterms_max'])
     npoly = int(config['npoly'])
@@ -410,27 +406,21 @@ def source_feat_extract(data, config, ls_kwargs={}, method_kwargs={}):
     errors = np.array(lc_clean.emag.values)
                  
     # Extract non-periodic statistics
-    np_s = tt.time()
     nonper_feats = magarr_stats(mags)
-    np_time = tt.time()-np_s
                  
     # Division into forced frequency grid input or not for lsq comp.
     if int(config['force_method']):
        # Division into irregular grid input for LSQ computation 
         if method_kwargs['irreg']:
-            ls_s = tt.time()
             per_dict = lombscargle_stats(times, mags, errors, **ls_kwargs)
             # Top N LS frequency grid and half multiple
             freqs = np.array(per_dict['top_distinct_freqs'])
             freq_dict = dict(freq_grid=
                              np.concatenate((.5*freqs,freqs))) 
-            ls_time = tt.time()-ls_s
             
-            lsq_s = tt.time()
             per_feats = periodic_feats_force(times, mags, errors, freq_dict=freq_dict,
                                              nterms_min=nterms_min, nterms_max=nterms_max,
                                              npoly=npoly)
-            lsq_time = tt.time()-lsq_s
         else:
             per_dict = lombscargle_stats(times, mags, errors, irreg=False, **ls_kwargs)
             
@@ -454,12 +444,9 @@ def source_feat_extract(data, config, ls_kwargs={}, method_kwargs={}):
         else:
             per_feats['log10_fap_ls'] = -323.
         
-        lag_s = tt.time()
         lag_feats = find_lag(times, period=per_feats['lsq_period'])
-        lag_time = tt.time()-lag_s
         
-        times = dict(pp_time=pp_time, np_time=np_time, ls_time=ls_time, lsq_time=lsq_time, lag_time=lag_time)
-        features = {'sourceid':sourceid, **per_feats, **per_dict, **nonper_feats, **lag_feats, **times}
+        features = {'sourceid':sourceid, **per_feats, **per_dict, **nonper_feats, **lag_feats}
         
     else:
         per_feats = periodic_feats(times, mags, errors, nterms_min, nterms_max, npoly)
@@ -482,8 +469,6 @@ def source_feat_extract(data, config, ls_kwargs={}, method_kwargs={}):
         
         features = {'sourceid':sourceid, 
                     **per_feats, **nonper_feats, **lag_feats}
-    
-    #print('%s feats loaded in %s s'%(sourceid, tt.time()-tot_s))
     
     colour_feats = colour_scatter(lc_all, lc_clean, features)
     

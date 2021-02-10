@@ -177,7 +177,11 @@ col32_save = ['amp_0', 'amp_1', 'amp_2', 'amp_3',
               'phi_0','phi_1','phi_2','phi_3',
               'phi_double_0','phi_double_1','phi_double_2','phi_double_3',           
               'peak_ratio_model', 'peak_ratio_data',
-              'JK_col','HK_col','prob']
+              'JK_col','HK_col','prob',
+              'Z_scale', 'Z_model',
+              'Y_scale', 'Y_model',
+              'J_scale', 'J_model',
+              'H_scale', 'H_model',]
 
 save_cols_types = dict(zip(col32_save,[np.float32]*len(col32_save)))
 
@@ -251,9 +255,9 @@ def cm_decaps(data):
 		as tt on  true  order by xid """,
             'mytable', (ra, dec, np.arange(len(dec))), ('ra', 'dec', 'xid'),**config.wsdb_kwargs))
     for ii in ['g','r','i','z']:
-        fltr = (decaps['decaps_%s_amp'%ii]==0.)
+        fltr = (decaps['decaps_%s_amp'%ii]==0.)|np.isnan(decaps['decaps_%s_amp'%ii])|np.isinf(decaps['decaps_%s_amp'%ii])
         decaps['log10_decaps_%s_amp'%ii]=np.nan
-        decaps.loc[~fltr, 'log10_decaps_%s_amp'%ii]=np.log10(decaps['decaps_%s_amp'%ii][fltr])
+        decaps.loc[~fltr, 'log10_decaps_%s_amp'%ii]=np.log10(decaps['decaps_%s_amp'%ii][~fltr])
         del decaps['decaps_%s_amp'%ii]
         
     nsc2 = pd.DataFrame(
@@ -297,10 +301,10 @@ if __name__=="__main__":
     
     features = combine_var_class(features)
     
-#     decaps_features = cm_decaps(features)
-#     pd.concat([features[['var_class']], decaps_features], axis=1, sort=False).reset_index(drop=True).to_pickle(
-#         config['variable_output_dir'] + 'decaps_dataset%s.pkl'%(''+'_test'*int(config['test'])))
-#     features = pd.concat([features, decaps_features], axis=1, sort=False).reset_index(drop=True)
+    decaps_features = cm_decaps(features)
+    pd.concat([features[['var_class']], decaps_features], axis=1, sort=False).reset_index(drop=True).to_pickle(
+        config['variable_output_dir'] + 'decaps_dataset%s.pkl'%(''+'_test'*int(config['test'])))
+    features = pd.concat([features, decaps_features], axis=1, sort=False).reset_index(drop=True)
     
     classifier = variable_classification(features, config)
     

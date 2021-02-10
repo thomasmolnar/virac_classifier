@@ -1,13 +1,13 @@
 #!/bin/bash
-n_chunks=16
+n_chunks=128
 max_chunk_number=`expr $n_chunks - 1`
 #PBS -N classify
 #PBS -d XXXX
 #PBS -t 0-$max_chunk_number
-#PBS -l nodes=1:ppn=1
-#PBS -l walltime=XX:00:00
-#PBS -l pmem=XXX
-#PBS -q main
+#PBS -l nodes=1:ppn=64
+#PBS -l walltime=96:00:00
+#PBS -l pmem=4000M
+#PBS -q test
 #PBS -j oe
 
 echo ------------------------------------------------------
