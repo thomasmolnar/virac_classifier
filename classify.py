@@ -105,7 +105,7 @@ def classify_region(grid, variable_classifier, lightcurve_loader,
                     lightcurve_loader.healpix_grid['hpx'].values[hfltr][0], 
                     lightcurve_loader.healpix_grid['nside'].values[hfltr][0], 
                     config)
-
+    
     if int(config['test']):
         input_data = input_data.sample(100, random_state=42)
     
