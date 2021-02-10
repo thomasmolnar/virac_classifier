@@ -16,11 +16,16 @@ from .lc_utils import *
 from astropy.timeseries.periodograms.lombscargle._statistics import false_alarm_probability as fap
 
 from astropy.utils.iers import IERS_A_URL, IERS_B_URL, conf
-from astropy.utils.data import download_file
 
-conf.auto_download = True
-download_file(IERS_A_URL, cache="update")
-download_file(IERS_B_URL, cache="update")
+try:
+    from astropy.utils.data import download_file
+    conf.auto_download = True
+    download_file(IERS_A_URL, cache="update")
+    download_file(IERS_B_URL, cache="update")
+except:
+    from astropy.utils.data import import_file_to_cache
+    import_file_to_cache("https://datacenter.iers.org/data/9/finals2000A.all", "finals2000A.all")
+    import_file_to_cache("http://hpiers.obspm.fr/iers/eop/eopc04/eopc04_IAU2000.62-now", "eopc04_IAU2000.62-now")
 conf.auto_download = False
 
 # Earth coord global
