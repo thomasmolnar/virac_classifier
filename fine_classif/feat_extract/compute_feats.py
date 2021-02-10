@@ -24,8 +24,8 @@ try:
     download_file(IERS_B_URL, cache="update")
 except:
     from astropy.utils.data import import_file_to_cache
-    import_file_to_cache("https://datacenter.iers.org/data/9/finals2000A.all", "finals2000A.all")
-    import_file_to_cache("http://hpiers.obspm.fr/iers/eop/eopc04/eopc04_IAU2000.62-now", "eopc04_IAU2000.62-now")
+    import_file_to_cache(IERS_A_URL, "finals2000A.all")
+    import_file_to_cache(IERS_B_URL, "eopc04_IAU2000.62-now")
 conf.auto_download = False
 
 # Earth coord global
