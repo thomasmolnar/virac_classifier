@@ -29,17 +29,17 @@ class extinction_map_healpix(object):
     def query(self, l, b):
         match_ipix = lonlat_to_healpix(l*u.deg, b*u.deg, self.maxnside, order='nested')
         i = self.sorter[np.searchsorted(self.index_nest, match_ipix, side='right', sorter=self.sorter) - 1]
-        return self.ff['e%s'%self.version[-2:].lower()].values[i]
+        return self.ff['e%s'%self.version[-2:].lower()].to_numpy()[i]
     
     def query_spread(self, l, b):
         match_ipix = lonlat_to_healpix(l*u.deg, b*u.deg, self.maxnside, order='nested')
         i = self.sorter[np.searchsorted(self.index_nest, match_ipix, side='right', sorter=self.sorter) - 1]
-        return self.ff['sigma_e%s'%self.version[-2:].lower()].values[i]
+        return self.ff['sigma_e%s'%self.version[-2:].lower()].to_numpy()[i]
 
     def resolution(self, l, b):
         match_ipix = lonlat_to_healpix(l*u.deg, b*u.deg, self.maxnside, order='nested')
         i = self.sorter[np.searchsorted(self.index_nest, match_ipix, side='right', sorter=self.sorter) - 1]
-        return self.ff['resolution'].values[i]
+        return self.ff['resolution'].to_numpy()[i]
     
 
     

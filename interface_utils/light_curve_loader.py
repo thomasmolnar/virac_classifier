@@ -152,8 +152,8 @@ class lightcurve_loader(object):
         r_index = np.searchsorted(self.healpix_grid['index'], 
                                   ring2nest(MAXNSIDE,np.int64(sourceid/1000000)), 
                                   side='right') - 1
-        indices = self.healpix_grid['hpx'].values[r_index]
-        nside = self.healpix_grid['nside'].values[r_index]
+        indices = self.healpix_grid['hpx'].to_numpy()[r_index]
+        nside = self.healpix_grid['nside'].to_numpy()[r_index]
         
         # Group sources based on file
         sorted_ = np.argsort(indices)
@@ -176,7 +176,7 @@ class lightcurve_loader(object):
         Output in form [ra, dec, lc] - ra/dec needed to correct MJD to HJD
         (easiest to include now)
         """
-        inp_sourceids = data['sourceid'].values
+        inp_sourceids = data['sourceid'].to_numpy()
 
         lc = self.__call__(inp_sourceids)
 

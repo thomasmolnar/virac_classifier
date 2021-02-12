@@ -25,7 +25,7 @@ def jd_to_year(times):
 
 
 def wrap_df(data, fld, period=None, phase_zero=False):
-    data[fld] -= data[fld].values[0] * phase_zero
+    data[fld] -= data[fld].to_numpy()[0] * phase_zero
     if period is not None:
         data[fld] = data[fld] % (2. * period)
     return data.sort_values(by=fld)

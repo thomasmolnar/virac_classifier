@@ -31,12 +31,12 @@ def add_colour_info(df, config):
     
     """
     
-    glon = df.l.values
-    glat = df.b.values
+    glon = df.l.to_numpy()
+    glat = df.b.to_numpy()
     ## Need to check columns names for filter phots
-    jmag = df.j_b_ivw_mean_mag.values
-    hmag = df.h_b_ivw_mean_mag.values
-    kmag = df.ks_b_ivw_mean_mag.values
+    jmag = df.j_b_ivw_mean_mag.to_numpy()
+    hmag = df.h_b_ivw_mean_mag.to_numpy()
+    kmag = df.ks_b_ivw_mean_mag.to_numpy()
         
     jk_col_excess = calc_excess_colour(glon, glat, config, jk=True)
     hk_col_excess = calc_excess_colour(glon, glat, config, hk=True)
@@ -50,7 +50,10 @@ def find_princ(angles):
     Find principal angles for phases in 0<=theta<=2*pi range
     
     """
-    corr_angs = np.remainder(np.array(angles), 2*np.pi)
+
+    corr_angs = np.copy(angles)
+ 
+    corr_angs[np.isfinite(angles)] = np.remainder(angles[np.isfinite(angles)], 2*np.pi)
         
     return corr_angs
 
@@ -63,13 +66,13 @@ def construct_final_df(df_use):
     # phase differences based on def phi_{ij} = phi_i - i phi_j
     pairs = [[1,0],[2,0],[3,0],[2,1],[3,1],[3,2]]
     for i, j in pairs:
-        df_use['phi%i_phi%i'%(i,j)] = find_princ((j+1)*df_use['phi_%i'%i].values
-                                                 -(i+1)*df_use['phi_%i'%j].values)
-        df_use['phi%i_phi%i_double'%(i,j)] = find_princ((j+1)*df_use['phi_double_%i'%i].values
-                                                        -(i+1)*df_use['phi_double_%i'%j].values)
+        df_use['phi%i_phi%i'%(i,j)] = find_princ((j+1)*df_use['phi_%i'%i].to_numpy()
+                                                 -(i+1)*df_use['phi_%i'%j].to_numpy())
+        df_use['phi%i_phi%i_double'%(i,j)] = find_princ((j+1)*df_use['phi_double_%i'%i].to_numpy()
+                                                        -(i+1)*df_use['phi_double_%i'%j].to_numpy())
         
-        df_use['a%i_a%i'%(j,i)] = df_use['amp_%i'%j].values/df_use['amp_%i'%i].values
-        df_use['a%i_a%i_double'%(j,i)] = df_use['amp_double_%i'%j].values/df_use['amp_double_%i'%i].values
+        df_use['a%i_a%i'%(j,i)] = df_use['amp_%i'%j].to_numpy()/df_use['amp_%i'%i].to_numpy()
+        df_use['a%i_a%i_double'%(j,i)] = df_use['amp_double_%i'%j].to_numpy()/df_use['amp_double_%i'%i].to_numpy()
 
 def finalise_feats(features_df, input_df, config):
     """
@@ -102,12 +105,12 @@ def extract_per_feats(lc_dfs, input_df, ls_kwargs, method_kwargs,
     if serial:
         features = [source_feat_extract(data, ls_kwargs=ls_kwargs,
                     method_kwargs=method_kwargs, config=config) 
-                    for data in zip(input_df['ra'].values, input_df['dec'].values, lc_dfs)]
+                    for data in zip(input_df['ra'].to_numpy(), input_df['dec'].to_numpy(), lc_dfs)]
     else:
         with Pool(int(config['var_cores'])) as p:
             features = p.map(partial(source_feat_extract, ls_kwargs=ls_kwargs,
                                      method_kwargs=method_kwargs, config=config), 
-                                 zip(input_df['ra'].values, input_df['dec'].values, lc_dfs))
+                                 zip(input_df['ra'].to_numpy(), input_df['dec'].to_numpy(), lc_dfs))
     
     feature_df = pd.DataFrame.from_dict(features)
 

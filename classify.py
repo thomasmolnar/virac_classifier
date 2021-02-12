@@ -3,6 +3,7 @@ import sys
 import pandas as pd
 import time
 import pickle
+import warnings
 import numpy as np
 from functools import partial
 from multiprocessing import Pool
@@ -59,8 +60,8 @@ def find_cells(input_data, grid):
     input_data.loc[(input_data['l']<350.)&(input_data['b']<-maxbgriddisc),'btmp']=-maxbgriddisc
     input_data.loc[(input_data['l']<minlgriddisc),'ltmp'] = minlgriddisc
     
-    cells = np.abs(wrap(input_data['ltmp'][:,np.newaxis]-grid['l'][np.newaxis,:]))<=.5*np.float64(config['sizel'])
-    cells &= np.abs(input_data['btmp'][:,np.newaxis]-grid['b'][np.newaxis,:])<=.5*np.float64(config['sizeb'])
+    cells = np.abs(wrap(input_data['ltmp'].to_numpy()[:,np.newaxis]-grid['l'].to_numpy()[np.newaxis,:]))<=.5*np.float64(config['sizel'])
+    cells &= np.abs(input_data['btmp'].to_numpy()[:,np.newaxis]-grid['b'].to_numpy()[np.newaxis,:])<=.5*np.float64(config['sizeb'])
     del input_data['ltmp']
     del input_data['btmp']
     
@@ -102,22 +103,25 @@ def classify_region(grid, variable_classifier, lightcurve_loader,
     hfltr = lightcurve_loader.healpix_grid['index']==hpx_table_index
     
     input_data = lightcurve_loader.get_data_table_per_file(
-                    lightcurve_loader.healpix_grid['hpx'].values[hfltr][0], 
-                    lightcurve_loader.healpix_grid['nside'].values[hfltr][0], 
+                    lightcurve_loader.healpix_grid['hpx'].to_numpy()[hfltr][0], 
+                    lightcurve_loader.healpix_grid['nside'].to_numpy()[hfltr][0], 
                     config)
     
-    if int(config['test']):
-        input_data = input_data.sample(100, random_state=42)
+    #if int(config['test']):
+    #    input_data = input_data.sample(100, random_state=42)
     
     cell = find_cells(input_data, grid)
     
     def run_cell(index):
-        with open(config['binary_output_dir'] + 'binary_%i.pkl'%index, 'rb') as f:
-            binary_classifier = pickle.load(f)
-            if ~hasattr(binary_classifier, 'periodic_features'):
-                binary_classifier.periodic_features=[]
-            if ~hasattr(binary_classifier, 'no_upper_features'):
-                binary_classifier.no_upper_features=[]
+        with warnings.catch_warnings():
+            print('Suppressing sklearn pickle warnings for binary classifier') 
+            warnings.simplefilter("ignore")
+            with open(config['binary_output_dir'] + 'binary_%i.pkl'%index, 'rb') as f:
+                binary_classifier = pickle.load(f)
+                if ~hasattr(binary_classifier, 'periodic_features'):
+                    binary_classifier.periodic_features=[]
+                if ~hasattr(binary_classifier, 'no_upper_features'):
+                    binary_classifier.no_upper_features=[]
         clss = binary_classifier.predict(input_data[cell==index].reset_index(drop=True))
         return clss
     
@@ -162,11 +166,14 @@ if __name__=="__main__":
     
     grid = pd.read_pickle(config['binary_output_dir'] + 'grid.pkl')
     
-    with open(config['variable_output_dir'] + 'variable_classifier.pkl', 'rb') as f:
-        variable_classifier = pickle.load(f)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        print('Suppressing XGB & sklearn pickle warnings for variable classifier') 
+        with open(config['variable_output_dir'] + 'variable_classifier.pkl', 'rb') as f:
+            variable_classifier = pickle.load(f)
 
     light_curve_loader = lightcurve_loader(config['healpix_files_dir'])
-    indices = light_curve_loader.healpix_grid['index'].values
+    indices = light_curve_loader.healpix_grid['index'].to_numpy()
     
     if int(config['test']):
         chunked_indices_subset = [7380776]

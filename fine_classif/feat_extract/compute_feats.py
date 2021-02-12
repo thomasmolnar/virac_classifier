@@ -2,7 +2,7 @@ from scipy import stats
 from scipy.optimize import leastsq
 import numpy as np
 import pandas as pd
-import math
+import warnings
 
 import time as tt
 
@@ -222,7 +222,7 @@ def correct_to_HJD(data, ra, dec):
                           dec * u.deg,
                           frame='icrs')
     
-    times = time.Time(data['mjdobs'].values[0],
+    times = time.Time(data['mjdobs'].to_numpy()[0],
                       format='mjd',
                       scale='utc',
                       location=paranal)
@@ -259,9 +259,9 @@ def sigclipper(data, sig_thresh=4.):
     if len(data) <= 1:
         return data
     
-    stdd = .5 * np.diff(np.nanpercentile(data['mag'].values, [16, 84]))
-    midd = np.nanmedian(data['mag'].values)
-    return data[np.abs(data['mag'].values - midd) / stdd < sig_thresh].reset_index(
+    stdd = .5 * np.diff(np.nanpercentile(data['mag'].to_numpy(), [16, 84]))
+    midd = np.nanmedian(data['mag'].to_numpy())
+    return data[np.abs(data['mag'].to_numpy() - midd) / stdd < sig_thresh].reset_index(
         drop=True)
 
 ivw_ = lambda m, e: np.nansum(m/e**2)/np.nansum(1./e**2)
@@ -271,10 +271,10 @@ def contemp_mag_scatter_ratio(lc, lc_ref, tthresh=1./24.):
         Find the ratio of the magnitude of light curve lc compared to 'contemporaneous' 
         (within threshold tthresh) in light curve lc_ref
     """
-    Jtimes, Jmag, Jmag_err = lc['HJD'].values, lc['mag'].values, lc['emag'].values
+    Jtimes, Jmag, Jmag_err = lc['HJD'].to_numpy(), lc['mag'].to_numpy(), lc['emag'].to_numpy()
     meanJ = ivw_(Jmag,Jmag_err)
 
-    Ktimes, Kmag, Kmag_err = lc_ref['HJD'].values, lc_ref['mag'].values, lc_ref['emag'].values
+    Ktimes, Kmag, Kmag_err = lc_ref['HJD'].to_numpy(), lc_ref['mag'].to_numpy(), lc_ref['emag'].to_numpy()
     meanK = ivw_(Kmag,Kmag_err)
 
     tdiffs = np.abs(Jtimes[:,np.newaxis] - Ktimes[np.newaxis,:])
@@ -310,24 +310,31 @@ def data_scatter_wrt_model(lc, amplitudes, phases, period):
     if np.isnan(period) | np.any(np.isnan(amplitudes)) | np.any(np.isnan(phases)) | (len(lc)<2):
         return np.nan, np.nan
     
-    phase = (lc['HJD'] % period) * (2. * np.pi) / period
+    phase = (lc['HJD'].to_numpy() % period) * (2. * np.pi) / period
     n = np.arange(1, len(amplitudes)+1)
     mag = np.sum(amplitudes[:,np.newaxis] * np.cos(n[:,np.newaxis]*phase[np.newaxis,:]+phases[:,np.newaxis]), axis=0)
 
-    meanJ = ivw_(lc['mag'].values,lc['emag'].values)
-    meanK = ivw_(mag,lc['emag'].values)
-    mean_err = np.nanmedian(lc['emag'].values)
+    meanJ = ivw_(lc['mag'].to_numpy(),lc['emag'].to_numpy())
+    meanK = ivw_(mag,lc['emag'].to_numpy())
+    mean_err = np.nanmedian(lc['emag'].to_numpy())
 
-    Jscatter = ivw_((lc['mag'].values-meanJ)**2,lc['emag'].values)
+    Jscatter = ivw_((lc['mag'].to_numpy()-meanJ)**2,lc['emag'].to_numpy())
     if Jscatter > mean_err**2:
         Jscatter -= mean_err**2
-    Kscatter = ivw_((mag-meanK)**2, lc['emag'].values)
+    Kscatter = ivw_((mag-meanK)**2, lc['emag'].to_numpy())
 
-    if len(lc['mag'].values)>2:
-        params=leastsq(lambda p: (mag*p[1]**2-(lc['mag'].values-meanJ)-p[0])/lc['emag'].values, [0.,1.])[0]
-        spread = params[1]**2
-        if(spread<1e-4):
-            spread=np.nan
+    magnitudes, errors = lc['mag'].to_numpy(), lc['emag'].to_numpy()
+
+    if len(magnitudes)>2:
+        with warnings.catch_warnings():   
+            warnings.simplefilter("error", RuntimeWarning)     
+            try:
+                params=leastsq(lambda p: (mag*p[1]**2-(magnitudes-meanJ)-p[0])/errors, [0.,1.])[0]
+                spread = params[1]**2
+                if(spread<1e-4):
+                    spread=np.nan
+            except RuntimeWarning:
+                spread=np.nan
     else:
         spread=np.nan
 
@@ -383,7 +390,7 @@ def source_feat_extract(data, config, ls_kwargs={}, method_kwargs={}):
     
     ra, dec, lc_all = data
     
-    sourceid = lc_all['sourceid'].values[0]
+    sourceid = lc_all['sourceid'].to_numpy()[0]
     
     # Correct MJD to HJD
     correct_to_HJD(lc_all, ra, dec)
@@ -401,14 +408,14 @@ def source_feat_extract(data, config, ls_kwargs={}, method_kwargs={}):
     
     # Length check post quality cuts
     if len(lc_clean)<=int(config['n_detection_threshold']):
-        return {'sourceid':sourceid, 'error':True}
+        return {'sourceid':sourceid, 'error':True, 'n_epochs':len(lc_clean), 'significant_second_minimum':False}
     
     # Timeseries data
     nterms_min, nterms_max = int(config['nterms_min']), int(config['nterms_max'])
     npoly = int(config['npoly'])
-    times = np.array(lc_clean.HJD.values)
-    mags = np.array(lc_clean.mag.values)
-    errors = np.array(lc_clean.emag.values)
+    times = np.array(lc_clean.HJD.to_numpy())
+    mags = np.array(lc_clean.mag.to_numpy())
+    errors = np.array(lc_clean.emag.to_numpy())
                  
     # Extract non-periodic statistics
     nonper_feats = magarr_stats(mags)
