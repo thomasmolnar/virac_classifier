@@ -28,7 +28,8 @@ def get_periodic_features(data, lightcurve_loader, config, serial=True):
     lc, data = lightcurve_loader.split_lcs(data)
    
     # Universal frequency grid conditions 
-    ls_kwargs = {'maximum_frequency': np.float64(config['ls_max_freq'])}
+    ls_kwargs = {'maximum_frequency': np.float64(config['ls_max_freq']),
+                 'minimum_frequency': np.float64(config['ls_min_freq'])}
     method_kwargs = dict(irreg=True)
         
     #Extract features
@@ -106,9 +107,9 @@ def classify_region(grid, variable_classifier, lightcurve_loader,
                     lightcurve_loader.healpix_grid['hpx'].to_numpy()[hfltr][0], 
                     lightcurve_loader.healpix_grid['nside'].to_numpy()[hfltr][0], 
                     config)
-    
-    #if int(config['test']):
-    #    input_data = input_data.sample(100, random_state=42)
+    print(np.nanmedian(input_data['l']), np.nanmedian(input_data['b'])) 
+    if int(config['test']):
+        input_data = input_data.sample(100, random_state=42)
     
     cell = find_cells(input_data, grid)
     
@@ -144,8 +145,9 @@ def classify_region(grid, variable_classifier, lightcurve_loader,
 
     variable_output = variable_classifier.predict(variable_candidates)
     
-    variable_output[save_cols].astype(save_cols_types).to_pickle(
-        config['results_dir'] + 'results_%i%s.pkl'%(hpx_table_index,''+'_test'*int(config['test'])))
+    variable_output[save_cols].astype(save_cols_types).to_csv(
+        config['results_dir'] + 'results_%i%s.csv.tar.gz'%(hpx_table_index,''+'_test'*int(config['test']))
+    )
     
     final_time = time.time()
     

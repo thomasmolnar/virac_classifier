@@ -733,7 +733,7 @@ def power_stats(power):
     return {'pow_mean_disp':mean_disp}
 
 # Sidereal and standard day aliases to be removed
-alias_periods = np.array([0.99726, 0.99999, 0.99726/2, 0.99999/2, 0.99726/3., 0.99999/3.])
+alias_periods = np.array([0.99726, 0.99999, 0.99726/2., 0.99999/2., 0.99726/3., 0.99999/3.])
 
 def get_topN_freq(freq, power, N=30, tol=1e-3):
     """
@@ -744,8 +744,9 @@ def get_topN_freq(freq, power, N=30, tol=1e-3):
     topN_freqs = freq[arg_pows][-N:][::-1]
     topN_powrs = power[arg_pows][-N:][::-1]
 
+    period_tol = 0.005
     _ind = 0
-    while any(np.isclose(1./topN_freqs[_ind], alias_periods, rtol=0, atol=0.00009)):
+    while any(np.isclose(1./topN_freqs[_ind], alias_periods, rtol=0, atol=period_tol)):
         _ind+=1
     
     ls_period, max_pow = 1./topN_freqs[_ind], topN_powrs[_ind]
@@ -754,7 +755,7 @@ def get_topN_freq(freq, power, N=30, tol=1e-3):
     top_distinct_freq_power = []
     while len(topN_freqs)>=1:
         curr = topN_freqs[0]
-        if ~ np.any(np.isclose(1./curr, alias_periods, rtol=0, atol=0.00009)):
+        if ~ np.any(np.isclose(1./curr, alias_periods, rtol=0, atol=period_tol)):
             top_distinct_freqs.append(curr)
             top_distinct_freq_power.append(topN_powrs[0])
         
