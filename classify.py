@@ -107,9 +107,9 @@ def classify_region(grid, variable_classifier, lightcurve_loader,
                     lightcurve_loader.healpix_grid['hpx'].to_numpy()[hfltr][0], 
                     lightcurve_loader.healpix_grid['nside'].to_numpy()[hfltr][0], 
                     config)
-    print(np.nanmedian(input_data['l']), np.nanmedian(input_data['b'])) 
+    #print(np.nanmedian(input_data['l']), np.nanmedian(input_data['b'])) 
     if int(config['test']):
-        input_data = input_data.sample(100, random_state=42)
+        input_data = input_data.sample(5000, random_state=42)
     
     cell = find_cells(input_data, grid)
     

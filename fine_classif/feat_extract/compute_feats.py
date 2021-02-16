@@ -425,10 +425,13 @@ def source_feat_extract(data, config, ls_kwargs={}, method_kwargs={}):
        # Division into irregular grid input for LSQ computation 
         if method_kwargs['irreg']:
             per_dict = lombscargle_stats(times, mags, errors, **ls_kwargs)
+            if len(per_dict['top_distinct_freqs'])==0:
+                return {'sourceid':sourceid, 'error':True, 'n_epochs':len(lc_clean), 'significant_second_minimum':False}
+
             # Top N LS frequency grid and half multiple
             freqs = np.array(per_dict['top_distinct_freqs'])
             freq_dict = dict(freq_grid=
-                             np.concatenate((.5*freqs,freqs))) 
+                             np.concatenate((.5*freqs[.5*freqs>ls_kwargs['minimum_frequency']],freqs))) 
             
             per_feats = periodic_feats_force(times, mags, errors, freq_dict=freq_dict,
                                              nterms_min=nterms_min, nterms_max=nterms_max,
