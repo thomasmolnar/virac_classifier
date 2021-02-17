@@ -109,7 +109,7 @@ def classify_region(grid, variable_classifier, lightcurve_loader,
                     config)
     #print(np.nanmedian(input_data['l']), np.nanmedian(input_data['b'])) 
     if int(config['test']):
-        input_data = input_data.sample(5000, random_state=42)
+        input_data = input_data.sample(10000, random_state=42)
     
     cell = find_cells(input_data, grid)
     

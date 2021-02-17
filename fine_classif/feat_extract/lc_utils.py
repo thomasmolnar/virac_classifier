@@ -771,15 +771,15 @@ def get_topN_freq(freq, power, N=30, tol=1e-3):
     return dict(ls_period=ls_period, max_pow=max_pow, top_distinct_freqs=np.array(top_distinct_freqs),
                 top_distinct_freq_power=np.array(top_distinct_freq_power))
 
-# def is_window_function_peak(times, mags, errors, freqs, power, NW=5):
+def is_window_function_peak(times, mags, errors, freqs, power, NW=5):
     
-#     model = LombScargle(times,
-#                     np.ones_like(times),
-#                     errors,
-#                     center_data=False, fit_mean=False
-#                     )
-#     power_window = model.power(freqs)
-#     return power_window>power*10000.5
+    model = LombScargle(times,
+                    np.ones_like(times),
+                    errors,
+                    center_data=False, fit_mean=False
+                    )
+    power_window = model.power(freqs)
+    return power_window>power
 
 def lombscargle_stats(times, mags, errors, N=30, irreg=True, **ls_kwargs):
     """
@@ -800,12 +800,16 @@ def lombscargle_stats(times, mags, errors, N=30, irreg=True, **ls_kwargs):
         freqdict = {'top_distinct_freqs':np.array([])}
         
         freqdict = get_topN_freq(freq, power, N=N)
-#         while len(freqdict['top_distinct_freqs'])==0:
-#             freqdict = get_topN_freq(freq, power, N=N)
-#             is_wf = is_window_function_peak(times, mags, errors, freqdict['top_distinct_freqs'], 
-#                                             freqdict['top_distinct_freq_power'], ls_kwargs['maximum_frequency'])
-#             freqdict['top_distinct_freqs'] = freqdict['top_distinct_freqs'][~is_wf]
-#             N+=10
+        is_wf = is_window_function_peak(times, mags, errors, freqdict['top_distinct_freqs'], 
+                                        freqdict['top_distinct_freq_power'], ls_kwargs['maximum_frequency'])
+        freqdict['top_distinct_freqs'] = freqdict['top_distinct_freqs'][~is_wf]
+        
+        while len(freqdict['top_distinct_freqs'])==0:
+            N+=10
+            freqdict = get_topN_freq(freq, power, N=N)
+            is_wf = is_window_function_peak(times, mags, errors, freqdict['top_distinct_freqs'], 
+                                            freqdict['top_distinct_freq_power'], ls_kwargs['maximum_frequency'])
+            freqdict['top_distinct_freqs'] = freqdict['top_distinct_freqs'][~is_wf]
             
         out = {**freqdict, **pow_stats}
         del out['top_distinct_freq_power']
