@@ -109,7 +109,7 @@ def classify_region(grid, variable_classifier, lightcurve_loader,
                     config)
     #print(np.nanmedian(input_data['l']), np.nanmedian(input_data['b'])) 
     if int(config['test']):
-        input_data = input_data.sample(10000, random_state=42)
+        input_data = input_data.sample(100, random_state=42)
     
     cell = find_cells(input_data, grid)
     
@@ -146,7 +146,8 @@ def classify_region(grid, variable_classifier, lightcurve_loader,
     variable_output = variable_classifier.predict(variable_candidates)
     
     variable_output[save_cols].astype(save_cols_types).to_csv(
-        config['results_dir'] + 'results_%i%s.csv.tar.gz'%(hpx_table_index,''+'_test'*int(config['test']))
+        config['results_dir'] + 'results_%i%s.csv.tar.gz'%(hpx_table_index,''+'_test'*int(config['test'])),
+        index=False
     )
     
     final_time = time.time()
