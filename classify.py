@@ -40,33 +40,40 @@ def get_periodic_features(data, lightcurve_loader, config, serial=True):
     
     return features
 
-def find_cells(input_data, grid):
+def find_cells(input_data, grid, config):
         
     ## A hack so if things fall outside the footprint it doesn't break
     input_data['ltmp']=input_data['l'].copy()
     input_data['btmp']=input_data['b'].copy()
-    maxlgridbulge = np.max(grid['l']+.5*grid['sizel'])
-    minlgridbulge = np.min((grid['l']-.5*grid['sizel'])[(grid['l']>180.)&(grid['b']>2.5)])
-    input_data.loc[(np.abs(input_data['b'])>2.5)&(input_data['l']>maxlgridbulge),'ltmp']=maxlgridbulge
-    input_data.loc[(np.abs(input_data['b'])>2.5)&(input_data['l']<minlgridbulge),'ltmp']=minlgridbulge
     
+    maxbgriddisc = np.max((grid['b']+.5*grid['sizeb'])[grid['l']<-20.])
+    maxbgriddisc_f = np.max((grid['b']+grid['sizeb'])[grid['l']<-20.])
     maxbgridbulge = np.max(grid['b']+.5*grid['sizeb'])
     minbgridbulge = np.min(grid['b']-.5*grid['sizeb'])
-    input_data.loc[input_data['b']>maxbgridbulge,'btmp']=maxbgridbulge
-    input_data.loc[input_data['b']<minbgridbulge,'btmp']=minbgridbulge
-                           
-    maxbgriddisc = np.max((grid['b']+.5*grid['sizeb'])[grid['l']<340.])
-    minlgriddisc = np.min((grid['l']-.5*grid['sizel'])[grid['l']<340.])
-    input_data.loc[(input_data['l']<350.)&(input_data['b']>maxbgriddisc),'btmp']=maxbgriddisc
-    input_data.loc[(input_data['l']<350.)&(input_data['b']<-maxbgriddisc),'btmp']=-maxbgriddisc
-    input_data.loc[(input_data['l']<minlgriddisc),'ltmp'] = minlgriddisc
+    maxlgridbulge = np.max(grid['l']+.5*grid['sizel'])
+    minlgridbulge = np.min((grid['l']-.5*grid['sizel'])[(grid['l']<0.)&(grid['b']>maxbgriddisc)])
+    minlgridbulge_f = np.min((grid['l']-grid['sizel'])[(grid['l']<0.)&(grid['b']>maxbgriddisc)])
+    minlgriddisc = np.min((grid['l']-.5*grid['sizel'])[grid['l']<-20.])
     
-    cells = np.abs(wrap(input_data['ltmp'].to_numpy()[:,np.newaxis]-grid['l'].to_numpy()[np.newaxis,:]))<=.5*np.float64(config['sizel'])
-    cells &= np.abs(input_data['btmp'].to_numpy()[:,np.newaxis]-grid['b'].to_numpy()[np.newaxis,:])<=.5*np.float64(config['sizeb'])
+    input_data.loc[(wrap(input_data['l'])>=maxlgridbulge),'ltmp']=maxlgridbulge-1e-9
+    input_data.loc[(wrap(input_data['l'])<minlgriddisc),'ltmp'] = 360.+minlgriddisc+1e-9
+    
+    input_data.loc[input_data['b']>=maxbgridbulge,'btmp']=maxbgridbulge-1e-9
+    input_data.loc[input_data['b']<minbgridbulge,'btmp']=minbgridbulge+1e-9
+    input_data.loc[(wrap(input_data['l'])<minlgridbulge_f)&(input_data['b']<-maxbgriddisc),'btmp']=-maxbgriddisc+1e-9
+    input_data.loc[(wrap(input_data['l'])<minlgridbulge_f)&(input_data['b']>maxbgriddisc),'btmp']=maxbgriddisc-1e-9
+    input_data.loc[(wrap(input_data['l'])<minlgridbulge)&(np.abs(input_data['btmp'])>maxbgriddisc),'ltmp']=360.+minlgridbulge+1e-9
+    
+    cells =  wrap(input_data['ltmp'].to_numpy()[:,np.newaxis])>=(grid['l']-.5*grid['sizel']).to_numpy()[np.newaxis,:]
+    cells &= wrap(input_data['ltmp'].to_numpy()[:,np.newaxis])<(grid['l']+.5*grid['sizel']).to_numpy()[np.newaxis,:]
+    cells &= input_data['btmp'].to_numpy()[:,np.newaxis]>=(grid['b']-.5*grid['sizeb']).to_numpy()[np.newaxis,:]
+    cells &= input_data['btmp'].to_numpy()[:,np.newaxis]<(grid['b']+.5*grid['sizeb']).to_numpy()[np.newaxis,:]
     del input_data['ltmp']
     del input_data['btmp']
     
-    return np.argwhere(cells)[:,1]
+    cell_index=np.argwhere(cells)[:,1]
+    assert len(cell_index)==len(input_data)
+    return cell_index
 
 save_cols = [
     'sourceid', 'class', 'prob','n_epochs',
@@ -107,11 +114,14 @@ def classify_region(grid, variable_classifier, lightcurve_loader,
                     lightcurve_loader.healpix_grid['hpx'].to_numpy()[hfltr][0], 
                     lightcurve_loader.healpix_grid['nside'].to_numpy()[hfltr][0], 
                     config)
-    #print(np.nanmedian(input_data['l']), np.nanmedian(input_data['b'])) 
+    print(np.min(input_data['l']), np.max(input_data['l']))
+    if(len(input_data)==0):
+        return 
+
     if int(config['test']):
         input_data = input_data.sample(100, random_state=42)
     
-    cell = find_cells(input_data, grid)
+    cell = find_cells(input_data, grid, config)
     
     def run_cell(index):
         with warnings.catch_warnings():
@@ -168,7 +178,7 @@ if __name__=="__main__":
     config = configuration()
     
     grid = pd.read_pickle(config['binary_output_dir'] + 'grid.pkl')
-    
+ 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         print('Suppressing XGB & sklearn pickle warnings for variable classifier') 

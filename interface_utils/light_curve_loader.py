@@ -108,7 +108,10 @@ class lightcurve_loader(object):
                 return Table([])
             
             with h5py.File(self.file_path + 'n%i_%i.hdf5' % (ns, hpx), "r") as f:
-        
+       
+                if "variabilityIndices" not in list(f.keys()):
+                    return Table([])
+
                 sl_has_var_idx = f["sourceList/has_variabilityIndices"][:]
                 assert np.all((f["sourceList/sourceid"][sl_has_var_idx] - 
                                f["variabilityIndices/sourceid"][:])==0)
