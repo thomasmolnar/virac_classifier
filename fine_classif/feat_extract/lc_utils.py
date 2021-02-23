@@ -803,14 +803,16 @@ def lombscargle_stats(times, mags, errors, N=30, irreg=True, **ls_kwargs):
         is_wf = is_window_function_peak(times, mags, errors, freqdict['top_distinct_freqs'], 
                                         freqdict['top_distinct_freq_power'], ls_kwargs['maximum_frequency'])
         freqdict['top_distinct_freqs'] = freqdict['top_distinct_freqs'][~is_wf]
-        
+        Nstep = N
         while len(freqdict['top_distinct_freqs'])==0:
-            N+=10
+            N+=Nstep
+            if(N>1000):
+                break
             freqdict = get_topN_freq(freq, power, N=N)
             is_wf = is_window_function_peak(times, mags, errors, freqdict['top_distinct_freqs'], 
                                             freqdict['top_distinct_freq_power'], ls_kwargs['maximum_frequency'])
             freqdict['top_distinct_freqs'] = freqdict['top_distinct_freqs'][~is_wf]
-            
+
         out = {**freqdict, **pow_stats}
         del out['top_distinct_freq_power']
     else:
@@ -1006,7 +1008,9 @@ def find_peak_ratio_data(times, mag, errors, results, min_phase, second_minimum,
     while (np.count_nonzero(fltr1(phases, min_bin_size))<Ndatapoints) | (np.count_nonzero(fltr2(phases, min_bin_size))<Ndatapoints):
         min_bin_size+=0.01
         phases = ((times-min_time) / period + min_bin_size) % 1
-            
+        if(min_bin_size>min_phase_2nd):
+            break
+        
     peak1 = _ivw(mag, errors, lc_min, fltr1(phases, min_bin_size))
     peak2 = _ivw(mag, errors, lc_min, fltr2(phases, min_bin_size))
     

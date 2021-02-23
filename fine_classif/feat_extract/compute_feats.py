@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import warnings
 
-import time as tt
+import time as tt 
 
 from astropy import time, coordinates as coord, units as u
 from astropy.coordinates import SkyCoord
@@ -365,6 +365,12 @@ def colour_scatter(lc_all, lc_ref, features):
     
     return rslt
 
+class timer(object):
+    def __init__(self):
+        self.time = tt.time()
+    def done(self,strr=""):
+        print(strr, tt.time()-self.time)
+        self.time=tt.time()
 
 def source_feat_extract(data, config, ls_kwargs={}, method_kwargs={}):
     """
@@ -387,7 +393,7 @@ def source_feat_extract(data, config, ls_kwargs={}, method_kwargs={}):
     ['sourceid' 'mjdobs' 'mag' 'error' 'ambiguous_match' 'ast_res_chisq' 'chi']
     
     """
-    
+    #T = timer()
     ra, dec, lc_all = data
     
     sourceid = lc_all['sourceid'].to_numpy()[0]
@@ -417,9 +423,9 @@ def source_feat_extract(data, config, ls_kwargs={}, method_kwargs={}):
     mags = np.array(lc_clean.mag.to_numpy())
     errors = np.array(lc_clean.emag.to_numpy())
                  
-    # Extract non-periodic statistics
+    ## Extract non-periodic statistics
     nonper_feats = magarr_stats(mags)
-                 
+    #T.done("Init")             
     # Division into forced frequency grid input or not for lsq comp.
     if int(config['force_method']):
        # Division into irregular grid input for LSQ computation 
@@ -432,10 +438,10 @@ def source_feat_extract(data, config, ls_kwargs={}, method_kwargs={}):
             freqs = np.array(per_dict['top_distinct_freqs'])
             freq_dict = dict(freq_grid=
                              np.concatenate((.5*freqs[.5*freqs>ls_kwargs['minimum_frequency']],freqs))) 
-            
             per_feats = periodic_feats_force(times, mags, errors, freq_dict=freq_dict,
                                              nterms_min=nterms_min, nterms_max=nterms_max,
                                              npoly=npoly)
+            #T.done("Period")             
         else:
             per_dict = lombscargle_stats(times, mags, errors, irreg=False, **ls_kwargs)
             
@@ -463,6 +469,7 @@ def source_feat_extract(data, config, ls_kwargs={}, method_kwargs={}):
         
         features = {'sourceid':sourceid, **per_feats, **per_dict, **nonper_feats, **lag_feats}
         
+        #T.done("Finish")             
     else:
         per_feats = periodic_feats(times, mags, errors, nterms_min, nterms_max, npoly)
         
@@ -485,6 +492,7 @@ def source_feat_extract(data, config, ls_kwargs={}, method_kwargs={}):
         features = {'sourceid':sourceid, 
                     **per_feats, **nonper_feats, **lag_feats}
     
+    #T.done("Colour")             
     colour_feats = colour_scatter(lc_all, lc_clean, features)
     
     features = {**features, **colour_feats}

@@ -90,7 +90,8 @@ def finalise_feats(features_df, input_df, config):
     add_colour_info(df_match, config)
     
     # Finalise features
-    construct_final_df(df_match)
+    if 'phi_0' in df_match.columns:
+        construct_final_df(df_match)
     
     return df_match
     
@@ -102,6 +103,7 @@ def extract_per_feats(lc_dfs, input_df, ls_kwargs, method_kwargs,
     in panda format
     
     """
+    
     if serial:
         features = [source_feat_extract(data, ls_kwargs=ls_kwargs,
                     method_kwargs=method_kwargs, config=config) 

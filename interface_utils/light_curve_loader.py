@@ -57,6 +57,7 @@ class lightcurve_loader(object):
         self.healpix_grid.reset_index(drop=True,inplace=True)
     
     def get_lcdata_per_file(self, hpx, ns, sources):
+            
             if not os.path.isfile(self.file_path + 'n%i_%i.hdf5' % (ns, hpx)):
                 return Table([])
             with h5py.File(self.file_path + 'n%i_%i.hdf5' % (ns, hpx), "r") as f:

@@ -1,5 +1,14 @@
+import os
+os.environ["OMP_NUM_THREADS"]="1"
+os.environ["OPENBLAS_NUM_THREADS"]="1"
+os.environ["MKL_NUM_THREADS"]="1"
+os.environ["NUMEXPR_MAX_THREADS"]="1"
+os.environ["VECLIB_MAXIMUM_THREADS"]="1"
 from config import *
 import sys
+import logging
+import multiprocessing_logging
+multiprocessing_logging.install_mp_handler()
 import pandas as pd
 import time
 import pickle
@@ -7,6 +16,7 @@ import warnings
 import numpy as np
 from functools import partial
 from multiprocessing import Pool
+from datetime import datetime, timedelta
 
 from initial_classif.classifier.classifier import binary_classification
 from fine_classif.classifier.classifier import variable_classification
@@ -35,8 +45,9 @@ def get_periodic_features(data, lightcurve_loader, config, serial=True):
     #Extract features
     features = extract_per_feats(lc, data, ls_kwargs, method_kwargs, config, serial=serial)
     
-    features['max_phase_lag'] = features['max_time_lag']/features['lsq_period']
-    del features['max_time_lag']
+    if 'max_time_lag' in features.columns:
+        features['max_phase_lag'] = features['max_time_lag']/features['lsq_period']
+        del features['max_time_lag']
     
     return features
 
@@ -105,27 +116,38 @@ save_cols_types = dict(zip(col32_save,[np.float32]*len(col32_save)))
 
 def classify_region(grid, variable_classifier, lightcurve_loader, 
                     config, hpx_table_index):
+   
+    output_file = config['results_dir'] + 'results_%i%s.csv.tar.gz'%(hpx_table_index,''+'_test'*int(config['test']))
+
+    if os.path.isfile(output_file) and int(config['overwrite'])==0:
+        logging.info('Healpix {0}: already exists, skipping'.format(hpx_table_index))
+        return
     
     initial_time = time.time()
-    
+ 
+    logging.info('Healpix {0}: started, generating input data from lightcurve files'.format(hpx_table_index))
+   
     hfltr = lightcurve_loader.healpix_grid['index']==hpx_table_index
     
     input_data = lightcurve_loader.get_data_table_per_file(
                     lightcurve_loader.healpix_grid['hpx'].to_numpy()[hfltr][0], 
                     lightcurve_loader.healpix_grid['nside'].to_numpy()[hfltr][0], 
                     config)
-    print(np.min(input_data['l']), np.max(input_data['l']))
+    
     if(len(input_data)==0):
         return 
 
     if int(config['test']):
         input_data = input_data.sample(100, random_state=42)
     
+    logging.info('Healpix {0}: Running binary classifier for {1} lightcurves. Predicted finish time: {2}'.format(
+                 hpx_table_index, len(input_data), datetime.now()+timedelta(seconds=0.6*0.2*len(input_data)))) 
+    
     cell = find_cells(input_data, grid, config)
     
     def run_cell(index):
         with warnings.catch_warnings():
-            print('Suppressing sklearn pickle warnings for binary classifier') 
+            logging.warn('Healpix {0}: Suppressing sklearn pickle warnings for binary classifier'.format(hpx_table_index)) 
             warnings.simplefilter("ignore")
             with open(config['binary_output_dir'] + 'binary_%i.pkl'%index, 'rb') as f:
                 binary_classifier = pickle.load(f)
@@ -141,7 +163,9 @@ def classify_region(grid, variable_classifier, lightcurve_loader,
     variable_candidates = binary_output[(binary_output['class']=='VAR')&
                                      (np.float64(binary_output['prob'])>np.float64(config['probability_thresh']))].reset_index(drop=True)
     
-    print('Healpix {0}: {1}/{2} variable candidates'.format(hpx_table_index, len(variable_candidates), len(binary_output)))
+    logging.info('Healpix {0}: {1}/{2} variable candidates, predicted finish time {3}'.format(
+        hpx_table_index, len(variable_candidates), len(binary_output), 
+        datetime.now()+timedelta(seconds=0.6*len(variable_candidates)))) 
     
     if(len(variable_candidates)==0):
         return
@@ -149,16 +173,18 @@ def classify_region(grid, variable_classifier, lightcurve_loader,
     variable_candidates = variable_candidates.rename(columns={"prob": "prob_1st_stage"})
     
     variable_candidates = get_periodic_features(variable_candidates, lightcurve_loader, config)
-    variable_candidates['log10_fap'] = variable_candidates['log10_fap_ls']
-    del variable_candidates['log10_fap_ls']
+    
     variable_candidates = variable_candidates[~variable_candidates['error']].reset_index(drop=True)
 
+    if(len(variable_candidates)==0):
+        return
+    
+    variable_candidates['log10_fap'] = variable_candidates['log10_fap_ls']
+    del variable_candidates['log10_fap_ls']
+    
     variable_output = variable_classifier.predict(variable_candidates)
     
-    variable_output[save_cols].astype(save_cols_types).to_csv(
-        config['results_dir'] + 'results_%i%s.csv.tar.gz'%(hpx_table_index,''+'_test'*int(config['test'])),
-        index=False
-    )
+    variable_output[save_cols].astype(save_cols_types).to_csv(output_file, index=False)
     
     final_time = time.time()
     
@@ -169,7 +195,7 @@ def classify_region(grid, variable_classifier, lightcurve_loader,
                                                         (variable_output['prob']>0.8)))
     output_ = output_[:-1]
     
-    print('Healpix {0}: run in {1}s: {2}'.format(hpx_table_index, final_time-initial_time, output_))
+    logging.info('Healpix {0}: finished, run in {1}s: {2}'.format(hpx_table_index, final_time-initial_time, output_))
     
     return
     
@@ -177,25 +203,30 @@ if __name__=="__main__":
     
     config = configuration()
     
-    grid = pd.read_pickle(config['binary_output_dir'] + 'grid.pkl')
- 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        print('Suppressing XGB & sklearn pickle warnings for variable classifier') 
-        with open(config['variable_output_dir'] + 'variable_classifier.pkl', 'rb') as f:
-            variable_classifier = pickle.load(f)
-
     light_curve_loader = lightcurve_loader(config['healpix_files_dir'])
-    indices = light_curve_loader.healpix_grid['index'].to_numpy()
-    
+    indices = light_curve_loader.healpix_grid['index'].to_numpy().copy()
+    np.random.seed(42)
+    np.random.shuffle(indices)
+  
     if int(config['test']):
-        chunked_indices_subset = [7380776]
+        chunked_indices_subset = [7380776] * int(config['var_cores'])
+        chunk_index=0
     else:
         assert len(sys.argv)==3
         chunk_index = int(sys.argv[1])
         n_chunks = int(sys.argv[2])
         chunked_indices = np.array_split(indices, n_chunks)
         chunked_indices_subset = chunked_indices[chunk_index]
+    
+    logging.basicConfig(filename=config['results_dir']+'log_{0}{1}.log'.format(chunk_index,''+'_test'*int(config['test'])), 
+                        filemode='w', level=logging.INFO, format='%(asctime)s %(message)s')
+    
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        logging.warn('Suppressing XGB & sklearn pickle warnings for variable classifier') 
+        with open(config['variable_output_dir'] + 'variable_classifier.pkl', 'rb') as f:
+            variable_classifier = pickle.load(f)
+    grid = pd.read_pickle(config['binary_output_dir'] + 'grid.pkl')
     
     with Pool(np.int64(config['var_cores'])) as pool:
         pool.map(partial(classify_region, grid, variable_classifier, 
