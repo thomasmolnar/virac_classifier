@@ -38,8 +38,8 @@ with open(results_dir+'summary_log.log', 'w') as f:
 
     f.write('Current time:{0}\n\n'.format(datetime.datetime.now()))
     
-    f.write('Finished\n')
-    f.write("Average runtime per lc: %0.4fs\n"%np.nanmedian([finished_indices[g]/var_indices[g] for g in finished_indices.keys()]))
+    f.write('Finished: %i healpix\n'%len(finished_indices))
+    f.write("Average runtime per lc: %0.4fs\n\n"%np.nanmean([finished_indices[g]/var_indices[g] for g in finished_indices.keys()]))
     [f.write('Healpix {0}: {1}s, {2}s per lc\n'.format(g,finished_indices[g],finished_indices[g]/var_indices[g])) 
 		for g in finished_indices.keys()]
     f.write('\nUnfinished predicted times\n')
