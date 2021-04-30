@@ -32,6 +32,7 @@ outputs = [process_log(f) for f in files]
 
 finished_indices = {k:v for x in outputs for k, v in x[0].items()}
 unfinished_indices = {k:v for x in outputs for k, v in x[1].items()}
+unfinished_indices = sorted(unfinished_indices.items(), key=lambda kv: kv[1])
 var_indices = {k:v for x in outputs for k, v in x[2].items()}
 
 with open(results_dir+'summary_log.log', 'w') as f:
@@ -43,5 +44,5 @@ with open(results_dir+'summary_log.log', 'w') as f:
     [f.write('Healpix {0}: {1}s, {2}s per lc\n'.format(g,finished_indices[g],finished_indices[g]/var_indices[g])) 
 		for g in finished_indices.keys()]
     f.write('\nUnfinished predicted times\n')
-    [f.write('Healpix {0}: {1}\n'.format(g,unfinished_indices[g])) for g in unfinished_indices.keys()]
+    [f.write('Healpix {0}: {1}\n'.format(g[0],g[1])) for g in unfinished_indices]
 

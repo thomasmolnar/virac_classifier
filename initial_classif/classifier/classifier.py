@@ -9,6 +9,8 @@ from sklearn.impute import KNNImputer, IterativeImputer
 from sklearn.model_selection import KFold
 from sklearn.metrics import confusion_matrix, classification_report
 from sklearn.preprocessing import PowerTransformer
+from sklearn.utils import class_weight
+
 try:
     from sklearn.metrics import ConfusionMatrixDisplay
 except:
@@ -139,15 +141,19 @@ class classification(object):
                                                colsample_bytree=0.9,
                                                subsample=0.8,
                                                tree_method='hist', n_jobs=1)
+            fit_params = {'sample_weight':class_weight.compute_sample_weight(class_weight='balanced',y=y_train)}
+        
         else:
             self.model = RandomForestClassifier(n_estimators=100, min_samples_split=5, 
                                                 min_samples_leaf=5, max_features='sqrt',
-                                                max_depth=8, class_weight='balanced_subsample')
+                                                max_depth=8,
+                                                class_weight='balanced_subsample')
+            fit_params = None
         
         if cross_val:
             split = KFold(n_splits=10, shuffle=True, random_state=42)
             cv = cross_validate(self.model, X_train, y_train, cv=split, return_estimator=True,
-                                n_jobs=nthreads)
+                                n_jobs=nthreads,fit_params=fit_params)
 
             class_, prob_, prob_const_ = np.zeros_like(y_train), np.zeros_like(y_train), np.zeros_like(y_train)
             split = KFold(n_splits=10, shuffle=True, random_state=42)
@@ -168,7 +174,7 @@ class classification(object):
     #                                       (training_set['detailed_var_class']==ss))/
     #                       np.count_nonzero((training_set['detailed_var_class']==ss)))
 
-        self.model.fit(X_train, y_train)
+        self.model.fit(X_train, y_train, **fit_params)
         self.feature_importance = {c : self.model.feature_importances_[j]
                                     for j, c in enumerate(self.data_cols)}
         if plot_name:
@@ -187,7 +193,6 @@ class classification(object):
         yinp = yinp[self.data_cols].replace([np.inf, -np.inf], np.nan)
         with np.errstate(invalid='ignore'):
             yinp[self.log_transform_cols] = self.ptransformer.transform(yinp[self.log_transform_cols])
-        
         if self.imputer is not None:
             yinp[self.data_cols] = self.imputer.transform(yinp[self.data_cols].values)
                 

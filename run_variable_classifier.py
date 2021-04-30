@@ -208,10 +208,10 @@ def generate_periodic_features(config):
     
     print("Loading trainset...")
     
-    trainset = generate_secondstage_training(config)
-    #trainset[['sourceid', 'gaia_sourceid']].to_csv(str(config['variable_output_dir'])+'/variable_training_set_edr3_sourceid.csv',
-    #                              index=False)
-    
+    # trainset = generate_secondstage_training(config)
+    # trainset[['sourceid', 'gaia_sourceid']].to_csv(str(config['variable_output_dir'])+'/variable_training_set_edr3_sourceid.csv',
+    #                               index=False)
+    trainset = pd.read_csv('/local/scratch_2/jls/virac_classifier/variable/variable_training_set_edr3_sourceid.csv')
     print("---Trainset loaded - {} stars".format(len(trainset)))
     print("Loading periodic features...")
     
@@ -294,13 +294,13 @@ if __name__=="__main__":
     
     features = features[~(features['var_class']=='DSCT')].reset_index(drop=True)
     
-    features = features[~((features['var_class']=='EA/EB')&~(features['significant_second_minimum']))].reset_index(drop=True)
+    # features = features[~((features['var_class']=='EA/EB')&~(features['significant_second_minimum']))].reset_index(drop=True)
     
     for ii in np.unique(features['var_class']):
         print(ii, np.count_nonzero(features['var_class']==ii))
     
     features = combine_var_class(features)
-    
+    exit()    
     decaps_features = cm_decaps(features)
     pd.concat([features[['var_class']], decaps_features], axis=1, sort=False).reset_index(drop=True).to_pickle(
         config['variable_output_dir'] + 'decaps_dataset%s.pkl'%(''+'_test'*int(config['test'])))
