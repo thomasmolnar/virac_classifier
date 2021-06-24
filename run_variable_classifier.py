@@ -4,7 +4,7 @@ import pandas as pd
 import pickle
 import sqlutilpy as sqlutil
 from interface_utils.light_curve_loader import lightcurve_loader
-from initial_classif.trainset.variable_training_sets import load_all_variable_stars
+from initial_classif.trainset.variable_training_sets import load_all_variable_stars, load_mira_sample
 from initial_classif.trainset.gaia_extraction import generate_gaia_training_set_random
 from fine_classif.classifier.classifier import variable_classification
 from fine_classif.feat_extract.extract_feats import extract_per_feats
@@ -96,27 +96,8 @@ def get_periodic_features_mira_sample(config, serial=False):
         with open(variable_output_dir+'variable_features_mira.pkl', 'rb') as f:
             total_features = pickle.load(f)
         return total_features
-    
-    mira_table = pd.read_csv('mira_sample.csv')
-    
-    mira_ids = ','.join(np.str(s) for s in mira_table['virac_id'].values)
-    
-    from interface_utils.add_stats import main_string, var_string, pct_diff, phot_string, error_ratios
-    
-    dsets = pd.DataFrame(
-            sqlutil.get("""with t as (
-                            select {0} from 
-                            leigh_smith.virac2 as t where t.sourceid in ({3}))
-                            select {0}, {2}, {1} from t
-                            inner join leigh_smith.virac2_photstats as y on y.sourceid=t.sourceid
-                            inner join leigh_smith.virac2_var_indices as s on s.sourceid=t.sourceid;
-                            """.format(main_string, var_string, phot_string, mira_ids),
-                        **config.wsdb_kwargs))
-
-    ## Now filter
-    dsets = dsets[(dsets['ks_n_detections']>np.int64(config['n_detection_threshold']))&
-                  (dsets['ks_b_ivw_mean_mag']>np.float64(config['lower_k']))&
-                  (dsets['ks_b_ivw_mean_mag']<np.float64(config['upper_k']))].reset_index(drop=True)
+   
+    dsets = get_mira_sample(config)
     
     mira_ids = ','.join(np.str(s) for s in dsets['sourceid'].values)
 
@@ -208,10 +189,16 @@ def generate_periodic_features(config):
     
     print("Loading trainset...")
     
-    # trainset = generate_secondstage_training(config)
-    # trainset[['sourceid', 'gaia_sourceid']].to_csv(str(config['variable_output_dir'])+'/variable_training_set_edr3_sourceid.csv',
-    #                               index=False)
-    trainset = pd.read_csv('/local/scratch_2/jls/virac_classifier/variable/variable_training_set_edr3_sourceid.csv')
+    trainset = generate_secondstage_training(config)
+    
+    variable_output_dir = str(config['variable_output_dir'])
+
+    if os.path.isfile(variable_output_dir+'variable_training_set_edr3_sourceid.csv'):
+        trainset = pd.read_csv(variable_output_dir + 'variable_training_set_edr3_sourceid.csv')
+    else:
+        trainset.to_csv(variable_output_dir + '/variable_training_set_edr3_sourceid.csv',
+                        index=False)
+    
     print("---Trainset loaded - {} stars".format(len(trainset)))
     print("Loading periodic features...")
     
@@ -300,18 +287,19 @@ if __name__=="__main__":
         print(ii, np.count_nonzero(features['var_class']==ii))
     
     features = combine_var_class(features)
-    exit()    
-    decaps_features = cm_decaps(features)
-    pd.concat([features[['var_class']], decaps_features], axis=1, sort=False).reset_index(drop=True).to_pickle(
-        config['variable_output_dir'] + 'decaps_dataset%s.pkl'%(''+'_test'*int(config['test'])))
-    features = pd.concat([features, decaps_features], axis=1, sort=False).reset_index(drop=True)
+    
+    #exit()    
+    #decaps_features = cm_decaps(features)
+    #pd.concat([features[['var_class']], decaps_features], axis=1, sort=False).reset_index(drop=True).to_pickle(
+    #    config['variable_output_dir'] + 'decaps_dataset%s.pkl'%(''+'_test'*int(config['test'])))
+    #features = pd.concat([features, decaps_features], axis=1, sort=False).reset_index(drop=True)
     
     classifier = variable_classification(features, config)
     
     classifier.training_set.astype(save_cols_types).to_pickle(
-        config['variable_output_dir'] + 'variable_training_set%s.pkl'%(''+'_test'*int(config['test'])))
+        config['variable_output_dir'] + 'variable_training_set%s.pkl'%('_%i'%np.int64(config['log10_fap'])+'_test'*int(config['test'])))
     del classifier.training_set
     
     with open(config['variable_output_dir'] 
-              + 'variable_classifier%s.pkl'%(''+'_test'*int(config['test'])), 'wb') as f:
+              + 'variable_classifier%s.pkl'%('_%i'%np.int64(config['log10_fap'])+'_test'*int(config['test'])), 'wb') as f:
         pickle.dump(classifier, f)

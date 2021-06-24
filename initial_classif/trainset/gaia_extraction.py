@@ -2,12 +2,57 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 from sqlutilpy import *
-from interface_utils.add_stats import pct_diff, main_string, var_string, phot_string, error_ratios
+from interface_utils.add_stats import preprocess_data, main_string, var_string, phot_string
 
 ### Code for the automatic extraction of constant stellar sources, based on population statistics of a predetermined variability measure in Gaia.
 ### WSDB Gaia DR2 (gaia_*.gaia_source) table specifications are used.
 
 gaia_version = 'gaia_edr3' #'gaia_dr2'
+
+def generate_table_query_gaia_match(config):
+
+    max_crossmatch_distance = 2.0
+    crossmatch_distance = 0.4
+ 
+    virac2_gedr3_xmatch = """
+        create table virac2_gedr3_xmatch as (
+        with g as (
+                    select ra, dec,pmra,pmdec, source_id as gaia_id 
+                            from {0}.gaia_source as t
+                            where 
+                            ((t.l>350 or t.l<10.8) and t.b>-10.3 and t.b<5.2)
+                            or (t.l<350. and t.l>360-65.6428571434 and t.b>-1.1057142857*2 and t.b<1.1057142857*2)
+                    )
+                select sourceid, gaia_id, t.sep_arcsec from g
+                left join lateral (
+                                select sourceid, 
+                                q3c_dist_pm(g.ra, g.dec, g.pmra, g.pmdec, 1, 2016., t.ra, t.dec, 2014.)*3600. as sep_arcsec
+                                from leigh_smith.virac2 as t
+                                where q3c_join(g.ra, g.dec, t.ra, t.dec, {2}/3600.)
+                                order by q3c_dist_pm(g.ra, g.dec, g.pmra, g.pmdec, 1, 2016., t.ra, t.dec, 2014.) asc limit 1
+                                )
+                 as t on true
+                 where t.sep_arcsec<{2}
+    )
+    """.format(gaia_version, max_crossmatch_distance, crossmatch_distance)
+
+    return virac2_gedr3_xmatch
+
+def generate_table_query_with_stats(config):
+     
+     full_table = """
+		create table virac2_gedr3_xmatch_with_stats as (
+                select x.*, g.phot_g_mean_flux_over_error, g.phot_g_mean_mag, g.phot_g_n_obs, g.random_index,
+                {0},{1},{2}         
+                from jason_sanders.virac2_gedr3_xmatch as x
+                inner join {3}.gaia_source as g on g.source_id=x.gaia_id
+                inner join leigh_smith.virac2 as t on t.sourceid=x.sourceid
+                inner join leigh_smith.virac2_photstats as y on y.sourceid=x.sourceid
+                inner join leigh_smith.virac2_var_indices as s on s.sourceid=x.sourceid
+                where phot_g_mean_mag<30 and t.duplicate=0 and t.astfit_params=5)
+     """.format(main_string,var_string,phot_string,gaia_version)
+    
+     return full_table
 
 def grab_virac_gaia_random_sample(random_index_max,config):
     
@@ -15,81 +60,16 @@ def grab_virac_gaia_random_sample(random_index_max,config):
     
     if int(config['test']):
         test_string = "healpix_ang2ipix_ring(512,t.ra,t.dec)=2318830 and t.l<0.897411 and t.l>0.677411 and t.b<0.064603 and t.b>-0.164603"
-        
-        data = pd.DataFrame(sqlutil.get("""
-
-                with t as (select {0} from leigh_smith.virac2 as t where 
-                            duplicate=0 and astfit_params=5 
-                            and ks_n_detections>{2} and ks_ivw_mean_mag>{3} and ks_ivw_mean_mag<{4} and {5}),
-                     g as (select t.ra, t.dec, t.ref_epoch, t.pmra, t.pmdec, t.phot_g_mean_flux_over_error,
-                                    t.phot_g_mean_mag, t.phot_g_n_obs from {7}.gaia_source as t where {5})
-                                    
-                select t.*, {1}, {6}, x.sep_arcsec,
-                x.phot_g_mean_flux_over_error, x.phot_g_mean_mag, x.phot_g_n_obs from t
-                inner join leigh_smith.virac2_photstats as y on t.sourceid=y.sourceid
-                inner join leigh_smith.virac2_var_indices as s on s.sourceid=t.sourceid
-                
-                left join lateral (
-                    select g.phot_g_mean_flux_over_error, g.phot_g_mean_mag, g.phot_g_n_obs, 
-                            q3c_dist_pm(t.ra, t.dec, g.pmra, g.pmdec, 1, 2014., g.ra, g.dec, g.ref_epoch)*3600. as sep_arcsec 
-                    from g 
-                    where q3c_join(t.ra, t.dec, g.ra, g.dec, {8}/3600.)
-                    order by q3c_dist_pm(t.ra, t.dec, g.pmra, g.pmdec, 1, 2014., g.ra, g.dec, g.ref_epoch) asc limit 1) 
-                    as x on true
-                where x.sep_arcsec<0.4 and x.phot_g_mean_mag<30;""".format(
-                main_string,
-                var_string,
-                np.int64(config['n_detection_threshold']),
-                np.float64(config['lower_k']),
-                np.float64(config['upper_k']),
-                test_string, 
-                phot_string,
-                gaia_version, 
-                max_cross_match_distance), 
-            **config.wsdb_kwargs))
     else:
         test_string = "random_index<%i" % random_index_max
-        
-        data = pd.DataFrame(sqlutil.get("""
-                with g as (
-                        with p as (
-                        with q as (
-                                    select source_id, phot_g_mean_flux_over_error, phot_g_mean_mag, phot_g_n_obs, 
-                                    ra, dec, ref_epoch, pmra, pmdec, l, b from {7}.gaia_source where {5}
-                                )
-                            select * from q where phot_g_mean_mag<30 and b<6. and b>-11 and (l<12. or l>290.)
-                        )
-                        select p.source_id as gaia_sourceid, phot_g_mean_flux_over_error, phot_g_mean_mag, phot_g_n_obs, sep_arcsec, virac2_id from p
-                        left join lateral
-                            (select t.sourceid as virac2_id, duplicate, astfit_params, ks_n_detections, ks_ivw_mean_mag,
-                            q3c_dist_pm(t.ra, t.dec, p.pmra, p.pmdec, 1, 2014., p.ra, p.dec, p.ref_epoch)*3600. as sep_arcsec 
-                                from leigh_smith.virac2 as t
-                                where q3c_join(p.ra, p.dec, t.ra, t.dec, {8}/3600.)
-                                order by q3c_dist_pm(p.ra, p.dec, p.pmra, p.pmdec, 1, p.ref_epoch, t.ra, t.dec, 2014.) asc limit 1) 
-                                as x on true where x.sep_arcsec<0.4
-                                and duplicate=0 and astfit_params=5 
-                            and ks_n_detections>{2} and ks_ivw_mean_mag>{3} and ks_ivw_mean_mag<{4}
-                    )
-                select t.*, {1}, {6},  
-                g.gaia_sourceid, g.phot_g_mean_flux_over_error, g.phot_g_mean_mag, g.phot_g_n_obs, g.sep_arcsec from g
-                inner join leigh_smith.virac2 as t on t.sourceid=g.virac2_id
-                inner join leigh_smith.virac2_photstats as y on y.sourceid=g.virac2_id
-                inner join leigh_smith.virac2_var_indices as s on s.sourceid=g.virac2_id;""".format(
-                main_string,
-                var_string,
-                np.int64(config['n_detection_threshold']),
-                np.float64(config['lower_k']),
-                np.float64(config['upper_k']),
-                test_string,
-                phot_string,
-                gaia_version,
-                max_cross_match_distance), 
-            **config.wsdb_kwargs))
     
-    data = data[data['ks_b_ivw_mean_mag']>0.].reset_index(drop=True)
+    data = pd.DataFrame(sqlutil.get('''
+        select * from jason_sanders.virac2_gedr3_xmatch_with_stats as t where {0}
+               and ks_n_detections>{1} and ks_b_ivw_mean_mag>{2} and ks_b_ivw_mean_mag<{3} 
+        '''.format(test_string, np.int64(config['n_detection_threshold']),
+               np.float64(config['lower_k']), np.float64(config['upper_k'])), **config.wsdb_kwargs))
     
-    data = pct_diff(data)
-    data = error_ratios(data)
+    data = preprocess_data(data)
     
     data = data.sort_values(by='sep_arcsec').drop_duplicates(subset=['sourceid']).reset_index(drop=True)
     
@@ -113,113 +93,14 @@ def grab_virac_gaia_region_with_stats(l,b,sizel,sizeb,config):
     if (l + .5 * sizel > 360.):
         poly_string = "(t.l>%0.3f or t.l<%0.3f) and t.b>%0.3f and t.b<%0.3f"\
                         %(l-.5*sizel,l+.5*sizel-360.,b-.5*sizeb,b+.5*sizeb)
-        
-    virac2_gedr3_xmatch = """
-        with g as (
-                    select ra, dec,pmra,pmdec, source_id as gaia_id 
-                            from gaia_edr3.gaia_source as t
-                            where 
-                            ((t.l>350 or t.l<10.8) and t.b>-10.3 and t.b<5.2)
-                            or (t.l<350. and t.l>360-65.6428571434 and t.b>-1.1057142857*2 and t.b<1.1057142857*2)
-                    )
-                select sourceid, gaia_id, t.sep_arcsec from g
-                left join lateral (
-                                select sourceid, 
-                                q3c_dist_pm(g.ra, g.dec, g.pmra, g.pmdec, 1, 2016., t.ra, t.dec, 2014.)*3600. as sep_arcsec
-                                from leigh_smith.virac2 as t
-                                where q3c_join(g.ra, g.dec, t.ra, t.dec, 2.0/3600.)
-                                order by q3c_dist_pm(g.ra, g.dec, g.pmra, g.pmdec, 1, 2016., t.ra, t.dec, 2014.) asc limit 1
-                                ) 
-                as t on true where sourceid>0 and sep_arcsec<0.4;
-    """
-    full_table = """
-                select x.*, g.phot_g_mean_flux_over_error, g.phot_g_mean_mag, g.phot_g_n_obs,
-                          t.ra,t.dec,t.l,t.b,t.ks_n_detections,
-                          s.ks_stdev,s.ks_mad,s.ks_kurtosis,s.ks_skew,s.ks_eta,s.ks_stetson_i,s.ks_stetson_j,
-                          s.ks_stetson_k,s.ks_p100,s.ks_p0,s.ks_p99,s.ks_p1,s.ks_p95,s.ks_p5,s.ks_p84,s.ks_p16,
-                          s.ks_p75,s.ks_p25, y.ks_b_ivw_err_mag,y.j_b_ivw_mean_mag,y.h_b_ivw_mean_mag,
-                          y.ks_b_ivw_mean_mag,y.ks_n_b_phot
-                from jason_sanders.virac2_gedr3_xmatch as x
-                inner join gaia_edr3.gaia_source as g on g.source_id=x.gaia_id
-                inner join leigh_smith.virac2 as t on t.sourceid=x.sourceid
-                inner join leigh_smith.virac2_photstats as y on y.sourceid=x.sourceid
-                inner join leigh_smith.virac2_var_indices as s on s.sourceid=x.sourceid
-                
-                where phot_g_mean_mag<30 and t.duplicate=0 and t.astfit_params=5 and t.ks_n_detections>20
-                and t.ks_ivw_mean_mag>11.5 and t.ks_ivw_mean_mag<17.0
-    """
-#     print("""
-#             with q as (
-#             with g as (
-#                 with g as (
-#                     select phot_g_mean_flux_over_error, phot_g_mean_mag, phot_g_n_obs, source_id as gaia_id 
-#                             from gaia_edr3.gaia_source as t
-#                             where {5}
-#                     )
-#                 select g.phot_g_mean_flux_over_error, g.phot_g_mean_mag, g.phot_g_n_obs, g.gaia_id, x.sourceid, x.sep_arcsec from g
-#                 inner join jason_sanders.virac2_gedr3_xmatch as x on g.gaia_id=x.gaia_id
-#                 where phot_g_mean_mag<30 and x.sep_arcsec<0.4 
-#                 )
-#                 select g.phot_g_mean_flux_over_error, g.phot_g_mean_mag, g.phot_g_n_obs, g.gaia_id, g.sep_arcsec, {0} from g
-#                 inner join leigh_smith.virac2 as t on g.sourceid=t.sourceid
-#                 and t.duplicate=0 and t.astfit_params=5 and t.ks_n_detections>{2}
-#                 and ks_ivw_mean_mag>{3} and ks_ivw_mean_mag<{4}
-#                 )
-#             select q.*, {1}, {6} from q
-#                 inner join leigh_smith.virac2_photstats as y on y.sourceid=q.sourceid
-#                 inner join leigh_smith.virac2_var_indices as s on s.sourceid=q.sourceid
-#                 ;""".format(
-#             main_string,
-#             var_string,
-#             np.int64(config['n_detection_threshold']),
-#             np.float64(config['lower_k']),
-#             np.float64(config['upper_k']),
-#             poly_string,
-#             phot_string,
-#             gaia_version,
-#             max_cross_match_distance))
-#     data = pd.DataFrame(sqlutil.get("""
-#             with q as (
-#             with g as (
-#                 with g as (
-#                     select phot_g_mean_flux_over_error, phot_g_mean_mag, phot_g_n_obs, source_id as gaia_id 
-#                             from gaia_edr3.gaia_source as t
-#                             where {5}
-#                     )
-#                 select g.phot_g_mean_flux_over_error, g.phot_g_mean_mag, g.phot_g_n_obs, g.gaia_id, x.sourceid, x.sep_arcsec from g
-#                 inner join jason_sanders.virac2_gedr3_xmatch as x on g.gaia_id=x.gaia_id
-#                 where phot_g_mean_mag<30 and x.sep_arcsec<0.4 
-#                 )
-#                 select g.phot_g_mean_flux_over_error, g.phot_g_mean_mag, g.phot_g_n_obs, g.gaia_id, g.sep_arcsec, {0} from g
-#                 inner join leigh_smith.virac2 as t on g.sourceid=t.sourceid
-#                 and t.duplicate=0 and t.astfit_params=5 and t.ks_n_detections>{2}
-#                 and ks_ivw_mean_mag>{3} and ks_ivw_mean_mag<{4}
-#                 )
-#             select q.*, {1}, {6} from q
-#                 inner join leigh_smith.virac2_photstats as y on y.sourceid=q.sourceid
-#                 inner join leigh_smith.virac2_var_indices as s on s.sourceid=q.sourceid
-#                 ;""".format(
-#             main_string,
-#             var_string,
-#             np.int64(config['n_detection_threshold']),
-#             np.float64(config['lower_k']),
-#             np.float64(config['upper_k']),
-#             poly_string,
-#             phot_string,
-#             gaia_version,
-#             max_cross_match_distance), 
-#         **config.wsdb_kwargs))
     
     data = pd.DataFrame(sqlutil.get('''
         select * from jason_sanders.virac2_gedr3_xmatch_with_stats as t where {0}
-    '''.format(poly_string), **config.wsdb_kwargs))
+               and ks_n_detections>{1} and ks_b_ivw_mean_mag>{2} and ks_b_ivw_mean_mag<{3} 
+        '''.format(poly_string, np.int64(config['n_detection_threshold']),
+               np.float64(config['lower_k']), np.float64(config['upper_k'])), **config.wsdb_kwargs))
 
-    data = data[data['ks_b_ivw_mean_mag']>0.].reset_index(drop=True)
-    data = data.sort_values(by='sep_arcsec').reset_index(drop=True)
-    data = data[~data['sourceid'].duplicated()].reset_index(drop=True)
-    
-    data = pct_diff(data)
-    data = error_ratios(data)
+    data = preprocess_data(data)
     
     data = data.sort_values(by='sep_arcsec').drop_duplicates(subset=['sourceid']).reset_index(drop=True)
     

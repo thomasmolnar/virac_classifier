@@ -146,6 +146,7 @@ def periodic_feats(times, mags, errors, nterms_min=4, nterms_max=10, npoly=1, ma
     
     return {'lsq_period':per, 'delta_loglik':delta_loglik, 'lsq_power':lsq_power,
             'lsq_nterms':results['lsq_nterms'],
+            'normed_delta_loglik':delta_loglik / len(mags), 
             **amps, **phases, **peak_output}
 
 
@@ -185,7 +186,9 @@ def periodic_feats_force(times, mags, errors, freq_dict,
     lsq_power = 1 - results['lsq_chi_squared'] / results['chi2_ref']
     
     return {'lsq_period':per, 'lsq_period_error':per_error, 
-            'delta_loglik':delta_loglik, 'lsq_power': lsq_power,
+            'delta_loglik':delta_loglik, 
+            'normed_delta_loglik':delta_loglik / len(mags), 
+            'lsq_power': lsq_power,
             'lsq_nterms':results['lsq_nterms'],
             **amps, **phases, **peak_output}
 
@@ -198,6 +201,10 @@ def find_lag(times, period):
     times_fld = times%(period)
     times_fld_ord = np.sort(times_fld)
     times_fld_diff = np.diff(times_fld_ord)
+    
+    if len(times)>1:
+        times_fld_diff = np.append(times_fld_diff, 
+                                   times_fld_diff[0] - times_fld_diff[-1] + 1)
     
     if times_fld_diff.size==0:
         return {'error':True}

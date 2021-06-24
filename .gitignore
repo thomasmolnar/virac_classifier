@@ -1,3 +1,6 @@
+*.pdf
+*.dat
+*.fit
 *.csv
 *.txt
 *.parquet

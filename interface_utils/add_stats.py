@@ -8,7 +8,7 @@ main_table_cols = ['sourceid','ra','dec','l','b','ks_n_detections']
 main_string = 't.'+',t.'.join(main_table_cols)
 
 var_indices = ["ks_stdev","ks_mad","ks_kurtosis","ks_skew",
-               "ks_eta",
+               "ks_eta","ks_n_epochs",
                "ks_stetson_i","ks_stetson_j","ks_stetson_k",
                "ks_p100","ks_p0","ks_p99","ks_p1","ks_p95","ks_p5",
                "ks_p84","ks_p16","ks_p75","ks_p25"]
@@ -34,6 +34,16 @@ def error_ratios(dataV):
     for p in [[75,25],[84,16],[95,5],[99,1],[100,0]]:
         dataV['ks_p%i_p%i' % (p[0], p[1]) + '_over_error'] = dataV['ks_p%i_p%i' % (p[0], p[1])]/dataV['ks_mean_error']
         
+    return dataV
+
+def fix_stetson_J(dataV):
+    dataV['ks_stetson_j'] /= (dataV['ks_n_epochs']-1)
+    return dataV
+
+def preprocess_data(dataV):
+    dataV = pct_diff(dataV)
+    dataV = error_ratios(dataV)
+    dataV = fix_stetson_J(dataV)
     return dataV
 
 # def cm_virac_stats_table(data, config):

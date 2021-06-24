@@ -6,7 +6,7 @@ from astropy.coordinates import SkyCoord
 from astropy.table import Table, vstack, hstack
 from astropy_healpix import healpix_to_lonlat, level_ipix_to_uniq, nside_to_level
 from astropy_healpix.healpy import ring2nest
-from interface_utils.add_stats import main_table_cols, phot_stats, var_indices, pct_diff, error_ratios
+from interface_utils.add_stats import main_table_cols, phot_stats, var_indices, preprocess_data, error_ratios
 
 
 MAXNSIDE=1024
@@ -134,7 +134,7 @@ class lightcurve_loader(object):
                 for c in var_indices:
                     data[c] = f["variabilityIndices"][c][fltr] 
             
-            return error_ratios(pct_diff(data))
+            return preprocess_data(data)
     
         
     def __call__(self, sourceid_input):

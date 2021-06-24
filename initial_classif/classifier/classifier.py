@@ -148,7 +148,7 @@ class classification(object):
                                                 min_samples_leaf=5, max_features='sqrt',
                                                 max_depth=8,
                                                 class_weight='balanced_subsample')
-            fit_params = None
+            fit_params = {'sample_weight':None}
         
         if cross_val:
             split = KFold(n_splits=10, shuffle=True, random_state=42)

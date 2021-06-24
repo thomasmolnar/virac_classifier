@@ -21,7 +21,6 @@ from datetime import datetime, timedelta
 from initial_classif.classifier.classifier import binary_classification
 from fine_classif.classifier.classifier import variable_classification
 from fine_classif.feat_extract.extract_feats import extract_per_feats
-from interface_utils.add_stats import pct_diff, main_string, var_string, phot_string, error_ratios
 from run_variable_classifier import save_cols_types
 from interface_utils.light_curve_loader import lightcurve_loader
 

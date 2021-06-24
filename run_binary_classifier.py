@@ -6,7 +6,7 @@ import pickle
 from multiprocessing import Pool, BoundedSemaphore
 from functools import partial
 from initial_classif.trainset.gaia_extraction import generate_gaia_training_set
-from initial_classif.trainset.variable_training_sets import load_all_variable_stars
+from initial_classif.trainset.variable_training_sets import load_all_variable_stars, load_mira_sample
 from initial_classif.classifier.classifier import binary_classification
 
 lock = BoundedSemaphore(4)
@@ -14,7 +14,8 @@ lock = BoundedSemaphore(4)
 def train_classification_region(grid, variable_stars, config, index):
     
     output_file = config['binary_output_dir'] + 'binary_%i%s.pkl'%(index,''+'_test'*int(config['test']))
-    output_file_training_set = config['binary_output_dir'] + 'binary_training_set_%i%s.pkl'%(index,''+'_test'*int(config['test']))
+    output_file_training_set = config['binary_output_dir'] + \
+        'binary_training_set_%i%s.pkl'%(index,''+'_test'*int(config['test']))
     if os.path.isfile(output_file) and int(config['overwrite'])==0:
         return
     
@@ -85,6 +86,8 @@ if __name__=="__main__":
     
     print('Loading variable stars...') 
     variable_stars = load_all_variable_stars(config)
+    mira = load_mira_sample(config)
+    variable_stars = pd.concat([variable_stars, mira], axis=0, sort=False).reset_index(drop=True)
     variable_stars['detailed_var_class']=variable_stars['var_class'].copy()
     variable_stars['var_class']='VAR'
     
