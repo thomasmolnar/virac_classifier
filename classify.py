@@ -44,10 +44,6 @@ def get_periodic_features(data, lightcurve_loader, config, serial=True):
     #Extract features
     features = extract_per_feats(lc, data, ls_kwargs, method_kwargs, config, serial=serial)
     
-    if 'max_time_lag' in features.columns:
-        features['max_phase_lag'] = features['max_time_lag']/features['lsq_period']
-        del features['max_time_lag']
-    
     return features
 
 def find_cells(input_data, grid, config):
@@ -89,12 +85,13 @@ save_cols = [
     'sourceid', 'class', 'prob','n_epochs',
     'amp_0', 'amp_1', 'amp_2', 'amp_3', 
     'amp_double_0', 'amp_double_1', 'amp_double_2', 'amp_double_3', 
-    'amplitude', 'beyondfrac', 'delta_loglik', 'log10_fap',
-    'lsq_period', 'lsq_period_error', 'lsq_nterms', 'max_pow', 'max_phase_lag', 'pow_mean_disp', 'time_lag_mean',
+    'amplitude', 'model_amplitude', 'beyondfrac', 'delta_loglik', 'log10_fap',
+    'lsq_period', 'lsq_period_error', 'lsq_nterms', 'max_pow', 'max_phase_lag', 'pow_mean_disp', 'phase_lag_mean',
     'significant_second_minimum',
     'phi_0','phi_1','phi_2','phi_3',
     'phi_double_0','phi_double_1','phi_double_2','phi_double_3',
     'peak_ratio_model', 'peak_ratio_data',
+    'model_amplitude',
     'JK_col','HK_col', 'prob_1st_stage',
     'Z_scale','Z_model','Y_scale','Y_model','J_scale','J_model','H_scale','H_model'
 ]
@@ -102,11 +99,12 @@ save_cols = [
 col32_save = [
     'amp_0', 'amp_1', 'amp_2', 'amp_3', 
     'amp_double_0', 'amp_double_1', 'amp_double_2', 'amp_double_3', 
-    'amplitude', 'beyondfrac', 'delta_loglik',  'log10_fap',
-    'lsq_period_error', 'max_pow', 'max_phase_lag', 'pow_mean_disp', 'time_lag_mean',
+    'amplitude', 'model_amplitude', 'beyondfrac', 'delta_loglik',  'log10_fap',
+    'lsq_period_error', 'max_pow', 'max_phase_lag', 'pow_mean_disp', 'phase_lag_mean',
     'phi_0','phi_1','phi_2','phi_3',
     'phi_double_0','phi_double_1','phi_double_2','phi_double_3',           
     'peak_ratio_model', 'peak_ratio_data',
+    'model_amplitude',
     'JK_col','HK_col','prob', 'prob_1st_stage',
     'Z_scale','Z_model','Y_scale','Y_model','J_scale','J_model','H_scale','H_model'
 ]
@@ -136,8 +134,8 @@ def classify_region(grid, variable_classifier, lightcurve_loader,
     if(len(input_data)==0):
         return 
 
-    if int(config['test']):
-        input_data = input_data.sample(100, random_state=42)
+    #if int(config['test']):
+    #    input_data = input_data.sample(100, random_state=42)
     
     logging.info('Healpix {0}: Running binary classifier for {1} lightcurves. Predicted finish time: {2}'.format(
                  hpx_table_index, len(input_data), datetime.now()+timedelta(seconds=0.6*0.2*len(input_data)))) 
@@ -180,18 +178,23 @@ def classify_region(grid, variable_classifier, lightcurve_loader,
     
     variable_candidates['log10_fap'] = variable_candidates['log10_fap_ls']
     del variable_candidates['log10_fap_ls']
-    
-    variable_output = variable_classifier.predict(variable_candidates)
-    
-    variable_output[save_cols].astype(save_cols_types).to_csv(output_file, index=False)
+   
+    variable_output = {}
+
+    for fap_cut in variable_classifier: 
+        variable_output[fap_cut] = variable_classifier[fap_cut].predict(variable_candidates)
+    for s in ['class', 'prob', 'prob_var']:
+        variable_output[-10][s+'_nofap'] = variable_output[0][s]
+
+    variable_output[-10][save_cols].astype(save_cols_types).to_csv(output_file, index=False)
     
     final_time = time.time()
     
     output_ = ''
-    for ii in list(set(np.unique(variable_output['class']))-set(['CONST'])):
-        output_+='{0}:{1},'.format(ii, np.count_nonzero((variable_output['class']==ii)&
-                                                        (variable_output['log10_fap']<np.float64(config['log10_fap']))&
-                                                        (variable_output['prob']>0.8)))
+    for ii in list(set(np.unique(variable_output[-10]['class']))-set(['CONST'])):
+        output_+='{0}:{1},'.format(ii, np.count_nonzero((variable_output[-10]['class']==ii)&
+                                                        (variable_output[-10]['log10_fap']<np.float64(config['log10_fap']))&
+                                                        (variable_output[-10]['prob']>0.8)))
     output_ = output_[:-1]
     
     logging.info('Healpix {0}: finished, run in {1}s: {2}'.format(hpx_table_index, final_time-initial_time, output_))
@@ -223,8 +226,10 @@ if __name__=="__main__":
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         logging.warn('Suppressing XGB & sklearn pickle warnings for variable classifier') 
-        with open(config['variable_output_dir'] + 'variable_classifier.pkl', 'rb') as f:
-            variable_classifier = pickle.load(f)
+        variable_classifier = {}
+        for fap_cut in [-10, 0]:
+            with open(config['variable_output_dir'] + 'variable_classifier_%i.pkl' % fap_cut, 'rb') as f:
+                variable_classifier[fap_cut] = pickle.load(f)
     grid = pd.read_pickle(config['binary_output_dir'] + 'grid.pkl')
     
     with Pool(np.int64(config['var_cores'])) as pool:

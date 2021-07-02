@@ -1,5 +1,6 @@
 import numpy as np
 from astropy.timeseries import LombScargle
+from scipy.signal import find_peaks
 from astropy.time import Time
 from astropy.timeseries.periodograms.lombscargle.implementations.utils import trig_sum
 from astropy.timeseries.periodograms.lombscargle._statistics import false_alarm_probability as fap
@@ -732,46 +733,46 @@ def power_stats(power):
     
     return {'pow_mean_disp':mean_disp}
 
-# Sidereal and standard day aliases to be removed
-alias_periods = np.array([0.99726, 0.99999, 0.99726/2., 0.99999/2., 0.99726/3., 0.99999/3., 0.99999/4., 0.99726/4.])
+# # Sidereal and standard day aliases to be removed
+# alias_periods = np.array([0.99726, 0.99999, 0.99726/2., 0.99999/2., 0.99726/3., 0.99999/3., 0.99999/4., 0.99726/4.])
 
-def get_topN_freq(freq, power, N=30, tol=1e-3):
-    """
-    Retrieve top N frequencies from LombScargle based on power ranking
+# def get_topN_freq(freq, power, config, N=30, tol=1e-3):
+#     """
+#     Retrieve top N frequencies from LombScargle based on power ranking
     
-    """
-    arg_pows = np.argsort(power)
-    topN_freqs = freq[arg_pows][-N:][::-1]
-    topN_powrs = power[arg_pows][-N:][::-1]
+#     """
+#     arg_pows = np.argsort(power)
+#     topN_freqs = freq[arg_pows][-N:][::-1]
+#     topN_powrs = power[arg_pows][-N:][::-1]
 
-    period_tol = 0.005
-    _ind = 0
-    while any(np.isclose(1./topN_freqs[_ind], alias_periods, rtol=0, atol=period_tol)):
-        _ind+=1
-        if(_ind==N):
-            break
-    if(_ind==N):
-        return dict(top_distinct_freqs=np.array([]), top_distinct_freq_power=np.array([]))
+#     period_tol = np.float64(config['period_tol'])
+#     _ind = 0
+#     while any(np.isclose(1./topN_freqs[_ind], alias_periods, rtol=0, atol=period_tol)):
+#         _ind+=1
+#         if(_ind==N):
+#             break
+#     if(_ind==N):
+#         return dict(top_distinct_freqs=np.array([]), top_distinct_freq_power=np.array([]))
  
-    ls_period, max_pow = 1./topN_freqs[_ind], topN_powrs[_ind]
+#     ls_period, max_pow = 1./topN_freqs[_ind], topN_powrs[_ind]
     
-    top_distinct_freqs = []
-    top_distinct_freq_power = []
-    while len(topN_freqs)>=1:
-        curr = topN_freqs[0]
-        if ~np.any(np.isclose(1./curr, alias_periods, rtol=0, atol=period_tol)):
-            top_distinct_freqs.append(curr)
-            top_distinct_freq_power.append(topN_powrs[0])
+#     top_distinct_freqs = []
+#     top_distinct_freq_power = []
+#     while len(topN_freqs)>=1:
+#         curr = topN_freqs[0]
+#         if ~np.any(np.isclose(1./curr, alias_periods, rtol=0, atol=period_tol)):
+#             top_distinct_freqs.append(curr)
+#             top_distinct_freq_power.append(topN_powrs[0])
         
-        # Group frequencies within certain tolerance
-        group_bool = np.isclose(curr, topN_freqs, rtol=0., atol=tol)
-        topN_freqs = topN_freqs[~(group_bool)]
-        topN_powrs = topN_powrs[~(group_bool)]
+#         # Group frequencies within certain tolerance
+#         group_bool = np.isclose(curr, topN_freqs, rtol=0., atol=tol)
+#         topN_freqs = topN_freqs[~(group_bool)]
+#         topN_powrs = topN_powrs[~(group_bool)]
         
-    return dict(ls_period=ls_period, max_pow=max_pow, top_distinct_freqs=np.array(top_distinct_freqs),
-                top_distinct_freq_power=np.array(top_distinct_freq_power))
+#     return dict(ls_period=ls_period, max_pow=max_pow, top_distinct_freqs=np.array(top_distinct_freqs),
+#                 top_distinct_freq_power=np.array(top_distinct_freq_power))
 
-def is_window_function_peak(times, mags, errors, freqs, power, NW=5):
+def is_window_function_peak(times, mags, errors, freqs, power):
     
     model = LombScargle(times,
                     np.ones_like(times),
@@ -781,7 +782,31 @@ def is_window_function_peak(times, mags, errors, freqs, power, NW=5):
     power_window = model.power(freqs)
     return power_window>power
 
-def lombscargle_stats(times, mags, errors, N=30, irreg=True, **ls_kwargs):
+
+def get_top_frequencies(times, mags, errors, freq, power, config, N=30):
+    """
+    Retrieve top N frequencies from LombScargle based on power ranking
+    
+    """
+    peaks = find_peaks(power)[0]
+    arg_pows = np.argsort(power[peaks])
+    topN_freqs = freq[peaks][arg_pows][-N:][::-1]
+    topN_powrs = power[peaks][arg_pows][-N:][::-1]
+    
+    is_wf = is_window_function_peak(times, mags, errors, 
+                                    topN_freqs, 
+                                    topN_powrs)
+    
+    topN_freqs, topN_powrs = topN_freqs[~is_wf], topN_powrs[~is_wf]
+    
+    if len(topN_freqs)==0:
+        return dict(top_distinct_freqs=np.array([]), top_distinct_freq_power=np.array([]))
+    
+    return {'top_distinct_freqs':topN_freqs, 
+            'max_pow':topN_powrs[0],
+            'ls_period':1./topN_freqs[0]}
+
+def lombscargle_stats(times, mags, errors, config, N=30, irreg=True, **ls_kwargs):
     """
     LombScargle analysis of lightcurve to extract certain summary statistics
     
@@ -796,25 +821,18 @@ def lombscargle_stats(times, mags, errors, N=30, irreg=True, **ls_kwargs):
     pow_stats = power_stats(power)
     
     if irreg:
-        # Determine top N (distinct) frequencies
-        freqdict = {'top_distinct_freqs':np.array([])}
         
-        freqdict = get_topN_freq(freq, power, N=N)
-        is_wf = is_window_function_peak(times, mags, errors, freqdict['top_distinct_freqs'], 
-                                        freqdict['top_distinct_freq_power'], ls_kwargs['maximum_frequency'])
-        freqdict['top_distinct_freqs'] = freqdict['top_distinct_freqs'][~is_wf]
+        freq_dict = get_top_frequencies(times, mags, errors, freq, power, config, N)
         Nstep = N
-        while len(freqdict['top_distinct_freqs'])==0:
+        
+        while len(freq_dict['top_distinct_freqs'])==0:
             N+=Nstep
             if(N>1000):
                 break
-            freqdict = get_topN_freq(freq, power, N=N)
-            is_wf = is_window_function_peak(times, mags, errors, freqdict['top_distinct_freqs'], 
-                                            freqdict['top_distinct_freq_power'], ls_kwargs['maximum_frequency'])
-            freqdict['top_distinct_freqs'] = freqdict['top_distinct_freqs'][~is_wf]
-
-        out = {**freqdict, **pow_stats}
-        del out['top_distinct_freq_power']
+            freq_dict = get_top_frequencies(times, mags, errors, freq, power, config, N)
+        
+        out = {**freq_dict, **pow_stats}
+    
     else:
         # Find max power and hence most likely period
         periods = 1./freq
@@ -838,14 +856,17 @@ def retrieve_fourier(phase, fourier_components):
     return np.dot(fourier_components, X)
 
 
-def retrieve_fourier_poly(times, results, phase_min=None, with_var=False, var_at_best_period=True):
+def retrieve_fourier_poly(times, results, with_var=False, 
+                          var_at_best_period=True, phase_min=None, 
+                          zero_poly_terms=False):
     Kmax = results['lsq_nterms'] + 1
     npoly = results['lsq_npoly']
     period = results['lsq_period']
-    if phase_min==None:
-        time_zeropoint_poly = results['lsq_time_zeropoint_poly']
-    else: 
-        time_zeropoint_poly = phase_min
+    time_zeropoint_poly = results['lsq_time_zeropoint_poly']
+#     if phase_min==None:
+#         time_zeropoint_poly = results['lsq_time_zeropoint_poly']
+#     else: 
+#         time_zeropoint_poly = phase_min
         
     SINX = np.array(
         [np.sin(k * times / period * 2. * np.pi) for k in np.arange(1, Kmax)])
@@ -857,14 +878,17 @@ def retrieve_fourier_poly(times, results, phase_min=None, with_var=False, var_at
     SCX[::2] = SINX
     SCX[1::2] = COSX
     
-    X = np.concatenate([ONES[:1], SCX, ONES[1:]])
+    if zero_poly_terms:
+        X = np.concatenate([ONES[:1], SCX])
+    else:
+        X = np.concatenate([ONES[:1], SCX, ONES[1:]])
     
     if with_var:
         cov = results['fourier_coeffs_cov'+'_incl_period_error'*(~var_at_best_period)]
-        full_cov = np.dot(X.T, np.dot(cov, X))
-        return np.dot(results['fourier_coeffs'], X), np.diag(full_cov)
+        full_cov = np.dot(X.T, np.dot(cov[:len(X),:len(X)], X))
+        return np.dot(results['fourier_coeffs'][:len(X)], X), np.diag(full_cov)
     
-    return np.dot(results['fourier_coeffs'], X)
+    return np.dot(results['fourier_coeffs'][:len(X)], X)
 
 
 def retrieve_fourier_poly_firstderiv(times, results):
@@ -897,13 +921,19 @@ def integer_periods(t, results):
 def find_maximum_fourier(results):
     phse = np.linspace(0.,1.,1000)
     full_phase_curve = retrieve_fourier_poly(results['lsq_period'] * phse + integer_periods(results['lsq_time_zeropoint_poly'], results),
-                                             results)
+                                             results, zero_poly_terms=True)
     return np.min(full_phase_curve)
+
+def find_amplitude_fourier(results):
+    phse = np.linspace(0.,1.,1000)
+    full_phase_curve = retrieve_fourier_poly(results['lsq_period'] * phse + integer_periods(results['lsq_time_zeropoint_poly'], results),
+                                             results, zero_poly_terms=True)
+    return np.max(full_phase_curve)-np.min(full_phase_curve)
 
 def find_phase_of_minimum(results):
     phse = np.linspace(0.,1.,1000)
     full_phase_curve = retrieve_fourier_poly(results['lsq_period'] * phse + integer_periods(results['lsq_time_zeropoint_poly'], results), 
-                                             results)
+                                             results, zero_poly_terms=True)
     return phse[np.argmax(full_phase_curve)]
 
 def check_significant_second_minimum(results, min_phase, phase_range=[0.35,0.65], noise_thresh_factor=7., show_plot=False, return_min_location=False):
@@ -931,7 +961,7 @@ def check_significant_second_minimum(results, min_phase, phase_range=[0.35,0.65]
 
     fpoly, fpoly_var = retrieve_fourier_poly(results['lsq_period'] * (mid_phases + min_phase)
                                              + integer_periods(results['lsq_time_zeropoint_poly'], results), 
-                                                       results, with_var=True)
+                                                       results, with_var=True, zero_poly_terms=True)
     
     min_distance = np.hstack([np.argsort(distance_positive, axis=1)[:,:1,0],
                                   np.argsort(-distance_negative, axis=1)[:,:1,0]])
@@ -968,9 +998,11 @@ def find_peak_ratio_model(results, min_phase, second_minimum, min_phase_2):
     ## Two minima per period
     if second_minimum:
         middle_min=retrieve_fourier_poly(np.ones(1) * results['lsq_period'] * (min_phase_2 + min_phase)
-                                        + integer_periods(results['lsq_time_zeropoint_poly'], results),results)[0]
+                                        + integer_periods(results['lsq_time_zeropoint_poly'], results),results, 
+                                         zero_poly_terms=True)[0]
         first_min=retrieve_fourier_poly(np.ones(1) * min_phase * results['lsq_period']
-                                        + integer_periods(results['lsq_time_zeropoint_poly'], results),results)[0]
+                                        + integer_periods(results['lsq_time_zeropoint_poly'], results),results, 
+                                        zero_poly_terms=True)[0]
         maxx = find_maximum_fourier(results)
         if first_min>middle_min:
             first_min, middle_min = middle_min, first_min
@@ -1023,7 +1055,7 @@ def find_peak_ratio_data(times, mag, errors, results, min_phase, second_minimum,
 
 
 def get_delta_log_likelihood(y, yerr, pred_mean, free_var=False):
-    ''' Difference in log-likelihood between GP and pure Gaussian scatter '''
+    ''' Difference in log-likelihood between Fourier model and pure Gaussian scatter '''
     
     mean = np.sum(y / yerr**2) / np.sum(1. / yerr**2)
     

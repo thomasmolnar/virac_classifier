@@ -133,19 +133,21 @@ def periodic_feats(times, mags, errors, nterms_min=4, nterms_max=10, npoly=1, ma
     # Calculate delta log likelihood between periodic and constant Gaussian scatter models
     pred_mean = retrieve_fourier_poly(times=times, results=results)
     delta_loglik = get_delta_log_likelihood(mags, errors, pred_mean=pred_mean)
-    peak_output = compute_peak_properties(times, mags, errors, results)
     
     # Extract relevant Fourier terms
     amps = {'amp_%i'%i:a for i,a in enumerate(results['amplitudes'])[:nterms_min]}
     phases = {'phi_%i'%i:a for i,a in enumerate(results['phases'])[:nterms_min]}
     per = float(results['lsq_period'])
     
-    peak_output = compute_peak_properties(times, mags, errors, results, nterms)
+    peak_output = compute_peak_properties(times, mags, errors, results, nterms_min)
+    
+    model_amplitude = find_amplitude_fourier(results)
     
     lsq_power = 1 - results['lsq_chi_squared'] / results['chi2_ref']
     
     return {'lsq_period':per, 'delta_loglik':delta_loglik, 'lsq_power':lsq_power,
             'lsq_nterms':results['lsq_nterms'],
+            'model_amplitude': model_amplitude, 
             'normed_delta_loglik':delta_loglik / len(mags), 
             **amps, **phases, **peak_output}
 
@@ -173,7 +175,6 @@ def periodic_feats_force(times, mags, errors, freq_dict,
     # Calculate delta log likelihood between periodic and constant Gaussian scatter models
     pred_mean = retrieve_fourier_poly(times=times, results=results)
     delta_loglik = get_delta_log_likelihood(mags, errors, pred_mean=pred_mean)
-    peak_output = compute_peak_properties(times, mags, errors, results, nterms_min)
     
     # Extract relevant Fourier terms
     amps = {'amp_%i'%i:a for i,a in enumerate(results['amplitudes'][:nterms_min])}
@@ -183,9 +184,12 @@ def periodic_feats_force(times, mags, errors, freq_dict,
     
     peak_output = compute_peak_properties(times, mags, errors, results, nterms_min)
     
+    model_amplitude = find_amplitude_fourier(results)
+    
     lsq_power = 1 - results['lsq_chi_squared'] / results['chi2_ref']
     
     return {'lsq_period':per, 'lsq_period_error':per_error, 
+            'model_amplitude': model_amplitude, 
             'delta_loglik':delta_loglik, 
             'normed_delta_loglik':delta_loglik / len(mags), 
             'lsq_power': lsq_power,
@@ -204,7 +208,7 @@ def find_lag(times, period):
     
     if len(times)>1:
         times_fld_diff = np.append(times_fld_diff, 
-                                   times_fld_diff[0] - times_fld_diff[-1] + 1)
+                                   times_fld_ord[0] - times_fld_ord[-1] + period)
     
     if times_fld_diff.size==0:
         return {'error':True}
@@ -217,7 +221,7 @@ def find_lag(times, period):
     # Dispersion of max
     mean_disp = np.abs(t_max-mean)/sd
     
-    return {'time_lag_mean':mean_disp, 'max_time_lag':t_max, 'error':False}
+    return {'phase_lag_mean':mean_disp, 'max_phase_lag':t_max / period, 'error':False}
 
 
 def correct_to_HJD(data, ra, dec):
@@ -263,10 +267,13 @@ def sigclipper(data, sig_thresh=4.):
     Clip light curve based on sigma distance from mean 
     
     """
+    data = data[(~np.isnan(data['mag']))&(~np.isnan(data['emag']))].reset_index(drop=True)
     if len(data) <= 1:
         return data
     
     stdd = .5 * np.diff(np.nanpercentile(data['mag'].to_numpy(), [16, 84]))
+    if stdd==0. or np.isnan(stdd):
+        return data
     midd = np.nanmedian(data['mag'].to_numpy())
     return data[np.abs(data['mag'].to_numpy() - midd) / stdd < sig_thresh].reset_index(
         drop=True)
@@ -437,7 +444,7 @@ def source_feat_extract(data, config, ls_kwargs={}, method_kwargs={}):
     if int(config['force_method']):
        # Division into irregular grid input for LSQ computation 
         if method_kwargs['irreg']:
-            per_dict = lombscargle_stats(times, mags, errors, **ls_kwargs)
+            per_dict = lombscargle_stats(times, mags, errors, config, **ls_kwargs)
             if len(per_dict['top_distinct_freqs'])==0:
                 return {'sourceid':sourceid, 'error':True, 'n_epochs':len(lc_clean), 'significant_second_minimum':False}
 
@@ -450,7 +457,7 @@ def source_feat_extract(data, config, ls_kwargs={}, method_kwargs={}):
                                              npoly=npoly)
             #T.done("Period")             
         else:
-            per_dict = lombscargle_stats(times, mags, errors, irreg=False, **ls_kwargs)
+            per_dict = lombscargle_stats(times, mags, errors, config, irreg=False, **ls_kwargs)
             
             period = per_dict['ls_period']
             freq_dict = dict(f0=1./(2*period), f1=1./period, Nf=2) # Forced frequency grid

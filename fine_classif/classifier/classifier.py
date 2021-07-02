@@ -16,7 +16,7 @@ class variable_classification(classification):
                            'amp_0', 'amp_1', 'amp_2', 'amp_3', 
                            'amp_double_0', 'amp_double_1', 'amp_double_2', 'amp_double_3', 
                            'amplitude', 'beyondfrac', 'normed_delta_loglik', 'lsq_period',
-                           'max_pow', 'max_phase_lag', 'pow_mean_disp', 'time_lag_mean', 'log10_fap',
+                           'max_pow', 'max_phase_lag', 'pow_mean_disp', 'phase_lag_mean', 'log10_fap',
                            'phi1_phi0_x','phi2_phi0_x','phi3_phi0_x', 
                            'phi2_phi1_x', 'phi3_phi1_x', 'phi3_phi2_x',
                            'phi1_phi0_y','phi2_phi0_y','phi3_phi0_y', 
@@ -33,6 +33,7 @@ class variable_classification(classification):
                            'Y_scale', 'Y_model',
                            'J_scale', 'J_model',
                            'H_scale', 'H_model',
+                           'model_amplitude'
 #                            'log10_decaps_g_amp','log10_decaps_r_amp','log10_decaps_i_amp','log10_decaps_z_amp',
 #                            'nsc2_rmsvar', 'nsc2_madvar', 'nsc2_iqrvar', 'nsc2_etavar', 'nsc2_jvar', 'nsc2_kvar',
 #                            'nsc2_chivar', 'nsc2_romsvar', 'nsc2_nsigvar'
@@ -47,7 +48,7 @@ class variable_classification(classification):
                                   'phi1_phi0_double','phi2_phi0_double','phi3_phi0_double', 
                                    'phi2_phi1_double', 'phi3_phi1_double', 'phi3_phi2_double']
         
-        self.no_upper_features = ['JK_col', 'HK_col']
+        self.no_upper_features = ['JK_col', 'HK_col', 'ks_stetson_i']
         
         self.target_cols = ['var_class']
         
@@ -62,7 +63,7 @@ class variable_classification(classification):
                                    'amp_double_0', 'amp_double_1', 'amp_double_2', 'amp_double_3', 
                                    'lsq_period', 'normed_delta_loglik',
                                    'amplitude', 'beyondfrac', 'log10_fap',
-                                   'max_pow', 'max_phase_lag', 'pow_mean_disp', 'time_lag_mean',
+                                   'max_pow', 'max_phase_lag', 'pow_mean_disp', 'phase_lag_mean',
                                    'a0_a1', 'a0_a2', 'a0_a3', 'a1_a2', 'a1_a3', 'a2_a3',
                                    'a0_a1_double', 'a0_a2_double', 'a0_a3_double', 
                                    'a1_a2_double', 'a1_a3_double', 'a2_a3_double',
@@ -71,6 +72,7 @@ class variable_classification(classification):
                                    'Y_scale', 'Y_model',
                                    'J_scale', 'J_model',
                                    'H_scale', 'H_model',
+                                   'model_amplitude'
 #                                    'log10_decaps_g_amp','log10_decaps_r_amp','log10_decaps_i_amp','log10_decaps_z_amp',
 #                                    'nsc2_rmsvar', 'nsc2_madvar', 'nsc2_iqrvar', 'nsc2_etavar', 'nsc2_jvar', 'nsc2_kvar',
 #                                    'nsc2_chivar', 'nsc2_romsvar', 'nsc2_nsigvar'

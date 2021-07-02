@@ -107,7 +107,7 @@ class classification(object):
             if i not in self.no_upper_features:
                 fltr &= ~(df[i]>top)
             self.upper_lower_clips[i] = [bot, top]
-            print(i, np.count_nonzero(fltr))
+            print(i, np.count_nonzero(fltr))#, np.count_nonzero(df[fltr]['var_class']=='LPV'))
             
         if impute:
             self.imputer = KNNImputer(n_neighbors=5)
@@ -202,7 +202,8 @@ class classification(object):
         prob = self.model.predict_proba(yinp)
         class_dict = dict(zip(self.model.classes_, np.arange(len(self.model.classes_))))
         y['prob'] = prob[np.arange(len(y['class'])), [class_dict[clss] for clss in y['class']]]
-    
+        y['prob_var'] = 1-prob[:, class_dict['CONST']]
+
         return y
     
     def __init__(self):
@@ -228,6 +229,8 @@ class binary_classification(classification):
         self.target_cols = ['var_class']
         
         self.log_transform_cols = self.data_cols
+
+        self.no_upper_features = ['ks_stetson_i']
         
         self.training_set=self.run(training_set, plot_name, nthreads=1)
         

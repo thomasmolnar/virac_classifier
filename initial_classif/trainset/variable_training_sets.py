@@ -33,6 +33,9 @@ def load_all_variable_stars(config):
     
     dsets = preprocess_data(dsets)
 
+    # Remove BCEP
+    dsets = dsets[~(dsets['sourceid']==9855850009752)].reset_index(drop=True)
+
     return dsets
 
 
@@ -60,6 +63,10 @@ def load_mira_sample(config, serial=False):
                   (dsets['ks_b_ivw_mean_mag']<np.float64(config['upper_k']))].reset_index(drop=True)
     
     dsets = preprocess_data(dsets)
+
+    dsets['var_class'] = 'MIRA'
+    dsets = pd.merge(dsets, mira_table, left_on='sourceid', right_on='virac_id')
+    dsets = dsets.rename(columns = {'period':'cat_period'})
 
     return dsets
 

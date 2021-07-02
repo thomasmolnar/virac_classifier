@@ -33,12 +33,25 @@ def get_periodic_features_var(data, config, serial=True):
                                 unnest(ambiguous_match) as ambiguous_match  
                                 from leigh_smith.virac2_ts_tmolnar_train_zyjhk''' + ' limit 100000000'*int(config['test']),
                      **config.wsdb_kwargs))
+    lcsE = pd.DataFrame(sqlutil.get('''select sourceid, 
+                                unnest(mjdobs) as mjdobs,
+                                unnest(mag) as mag,
+                                unnest(emag) as emag,
+                                unnest(filterid) as filterid,
+                                unnest(chi) as chi,
+                                unnest(ast_res_chisq) as ast_res_chisq,
+                                unnest(ambiguous_match) as ambiguous_match  
+                                from leigh_smith.virac2_ts_tmolnar_variables_extended''' + ' limit 100000000'*int(config['test']),
+                     **config.wsdb_kwargs))
+
+    lcs = pd.concat([lcs, lcsE], axis=0, sort=False)
+
     print("---Timeseries data loaded.")
-    
-    if int(config['test'])==1:
-        lcs = pd.merge(lcs, data[['sourceid']], how='inner', on='sourceid').reset_index(drop=True)
-        data = pd.merge(data, pd.DataFrame({'sourceid':np.unique(lcs['sourceid'].values)}), 
-                       how='inner', on='sourceid').reset_index(drop=True)
+    print(len(data))
+ 
+    lcs = pd.merge(lcs, data[['sourceid']], how='inner', on='sourceid').reset_index(drop=True)
+    data = pd.merge(data, pd.DataFrame({'sourceid':np.unique(lcs['sourceid'].values)}), 
+                    how='inner', on='sourceid').reset_index(drop=True)
     
     lcs = lcs.sort_values(by=['sourceid', 'mjdobs']).reset_index(drop=True)
     uniq_ids, indices, inv_ids = np.unique(lcs['sourceid'], return_index=True, return_inverse=True)
@@ -47,6 +60,7 @@ def get_periodic_features_var(data, config, serial=True):
     data = data.sort_values(by='sourceid').reset_index(drop=True)
 
     # Add sky position of sources to be passed into periodic computation
+    print(len(data), len(uniq_ids))
     assert len(data)==len(uniq_ids)
     assert all(data['sourceid'].values==uniq_ids)
         
@@ -96,8 +110,8 @@ def get_periodic_features_mira_sample(config, serial=False):
         with open(variable_output_dir+'variable_features_mira.pkl', 'rb') as f:
             total_features = pickle.load(f)
         return total_features
-   
-    dsets = get_mira_sample(config)
+    
+    dsets = load_mira_sample(config)
     
     mira_ids = ','.join(np.str(s) for s in dsets['sourceid'].values)
 
@@ -113,8 +127,6 @@ def get_periodic_features_mira_sample(config, serial=False):
                                 where sourceid in ({0})'''.format(mira_ids,),
                      **config.wsdb_kwargs))
     
-    dsets = pct_diff(dsets)
-    dsets = error_ratios(dsets)
     dsets['var_class']='MIRA'
     
     dsets = dsets.sort_values(by='sourceid').reset_index(drop=True)
@@ -154,7 +166,7 @@ def get_periodic_features_mira_sample(config, serial=False):
 col32_save = ['amp_0', 'amp_1', 'amp_2', 'amp_3', 
               'amp_double_0', 'amp_double_1', 'amp_double_2', 'amp_double_3', 
               'amplitude', 'beyondfrac', 'delta_loglik', 'log10_fap',
-              'ls_period','lsq_period', 'max_pow', 'max_phase_lag', 'pow_mean_disp', 'time_lag_mean',
+              'ls_period','lsq_period', 'max_pow', 'max_phase_lag', 'pow_mean_disp', 'phase_lag_mean',
               'phi_0','phi_1','phi_2','phi_3',
               'phi_double_0','phi_double_1','phi_double_2','phi_double_3',           
               'peak_ratio_model', 'peak_ratio_data',
@@ -193,9 +205,7 @@ def generate_periodic_features(config):
     
     variable_output_dir = str(config['variable_output_dir'])
 
-    if os.path.isfile(variable_output_dir+'variable_training_set_edr3_sourceid.csv'):
-        trainset = pd.read_csv(variable_output_dir + 'variable_training_set_edr3_sourceid.csv')
-    else:
+    if ~os.path.isfile(variable_output_dir+'variable_training_set_edr3_sourceid.csv'):
         trainset.to_csv(variable_output_dir + '/variable_training_set_edr3_sourceid.csv',
                         index=False)
     
@@ -207,9 +217,6 @@ def generate_periodic_features(config):
     mira = get_periodic_features_mira_sample(config)
     
     features = pd.concat([features, mira], axis=0, sort=False).reset_index(drop=True)
-    
-    features['max_phase_lag'] = features['max_time_lag']/features['lsq_period']
-    del features['max_time_lag']
     
     return features
 
@@ -280,8 +287,6 @@ if __name__=="__main__":
     features = features[(features['var_class']=='CONST')|(features['log10_fap']<np.float64(config['log10_fap']))].reset_index(drop=True)
     
     features = features[~(features['var_class']=='DSCT')].reset_index(drop=True)
-    
-    # features = features[~((features['var_class']=='EA/EB')&~(features['significant_second_minimum']))].reset_index(drop=True)
     
     for ii in np.unique(features['var_class']):
         print(ii, np.count_nonzero(features['var_class']==ii))
