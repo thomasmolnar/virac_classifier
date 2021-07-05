@@ -113,7 +113,7 @@ def get_periodic_features_mira_sample(config, serial=False):
     
     dsets = load_mira_sample(config)
     
-    mira_ids = ','.join(np.str(s) for s in dsets['sourceid'].values)
+    mira_ids = ','.join(str(s) for s in dsets['sourceid'].values)
 
     lcs = pd.DataFrame(sqlutil.get('''select sourceid, 
                                 unnest(mjdobs) as mjdobs,
@@ -216,7 +216,8 @@ def generate_periodic_features(config):
     
     mira = get_periodic_features_mira_sample(config)
     
-    features = pd.concat([features, mira], axis=0, sort=False).reset_index(drop=True)
+    features = pd.concat([mira, features], axis=0, sort=False).reset_index(drop=True)
+    features = features[~features[['sourceid']].duplicated()].reset_index(drop=True)
     
     return features
 

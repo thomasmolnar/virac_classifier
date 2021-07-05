@@ -82,7 +82,7 @@ def find_cells(input_data, grid, config):
     return cell_index
 
 save_cols = [
-    'sourceid', 'class', 'prob','n_epochs',
+    'sourceid', 'class', 'prob','prob_var','n_epochs', 'class_nofap', 'prob_nofap', 'prob_var_nofap',
     'amp_0', 'amp_1', 'amp_2', 'amp_3', 
     'amp_double_0', 'amp_double_1', 'amp_double_2', 'amp_double_3', 
     'amplitude', 'model_amplitude', 'beyondfrac', 'delta_loglik', 'log10_fap',
@@ -105,7 +105,7 @@ col32_save = [
     'phi_double_0','phi_double_1','phi_double_2','phi_double_3',           
     'peak_ratio_model', 'peak_ratio_data',
     'model_amplitude',
-    'JK_col','HK_col','prob', 'prob_1st_stage',
+    'JK_col','HK_col','prob', 'prob_var', 'prob_nofap', 'prob_var_nofap', 'prob_1st_stage',
     'Z_scale','Z_model','Y_scale','Y_model','J_scale','J_model','H_scale','H_model'
 ]
 
@@ -134,8 +134,8 @@ def classify_region(grid, variable_classifier, lightcurve_loader,
     if(len(input_data)==0):
         return 
 
-    #if int(config['test']):
-    #    input_data = input_data.sample(100, random_state=42)
+    if int(config['test']):
+        input_data = input_data.sample(10000, random_state=42)
     
     logging.info('Healpix {0}: Running binary classifier for {1} lightcurves. Predicted finish time: {2}'.format(
                  hpx_table_index, len(input_data), datetime.now()+timedelta(seconds=0.6*0.2*len(input_data)))) 

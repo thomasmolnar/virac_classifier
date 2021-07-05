@@ -87,7 +87,8 @@ if __name__=="__main__":
     print('Loading variable stars...') 
     variable_stars = load_all_variable_stars(config)
     mira = load_mira_sample(config)
-    variable_stars = pd.concat([variable_stars, mira], axis=0, sort=False).reset_index(drop=True)
+    variable_stars = pd.concat([mira, variable_stars], axis=0, sort=False).reset_index(drop=True)
+    variable_stars = variable_stars[~variable_stars[['sourceid']].duplicated()].reset_index(drop=True)
     variable_stars['detailed_var_class']=variable_stars['var_class'].copy()
     variable_stars['var_class']='VAR'
     

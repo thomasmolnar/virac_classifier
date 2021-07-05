@@ -780,7 +780,28 @@ def is_window_function_peak(times, mags, errors, freqs, power):
                     center_data=False, fit_mean=False
                     )
     power_window = model.power(freqs)
+    
+    power_window[np.isnan(power_window)]=0.
+    
     return power_window>power
+
+
+def is_window_function_peak_v2(times, mags, errors, freqs, power):
+    
+    model = LombScargle(times,
+                    np.ones_like(times),
+                    errors,
+                    center_data=False, fit_mean=False
+                    )
+    df = 0.2/(np.max(times)-np.min(times))
+    
+    power_window = model.power(np.concatenate([freqs, freqs+df, freqs-df]))
+    
+    power_window[np.isnan(power_window)]=0.
+    
+    return (power_window[len(freqs):2*len(freqs)]<power_window[:len(freqs)])&\
+            (power_window[2*len(freqs):]<power_window[:len(freqs)])&\
+            (power_window[:len(freqs)]>power)
 
 
 def get_top_frequencies(times, mags, errors, freq, power, config, N=30):
@@ -793,11 +814,28 @@ def get_top_frequencies(times, mags, errors, freq, power, config, N=30):
     topN_freqs = freq[peaks][arg_pows][-N:][::-1]
     topN_powrs = power[peaks][arg_pows][-N:][::-1]
     
-    is_wf = is_window_function_peak(times, mags, errors, 
+    is_window_function_peak_fn = is_window_function_peak#_v2
+    
+    is_wf = is_window_function_peak_fn(times, mags, errors, 
                                     topN_freqs, 
                                     topN_powrs)
     
     topN_freqs, topN_powrs = topN_freqs[~is_wf], topN_powrs[~is_wf]
+    
+    freq_max = 1./365.
+    long_freq = topN_freqs[topN_freqs<freq_max]
+    
+    for lf in long_freq:
+        is_wf = is_window_function_peak_fn(times, mags, errors, 
+                                        topN_freqs+lf, 
+                                        topN_powrs)
+        fltr = (~is_wf)|(topN_freqs<freq_max)
+        topN_freqs, topN_powrs = topN_freqs[fltr], topN_powrs[fltr]
+        is_wf = is_window_function_peak_fn(times, mags, errors, 
+                                        topN_freqs-lf, 
+                                        topN_powrs)
+        fltr = (~is_wf)|(topN_freqs<freq_max)
+        topN_freqs, topN_powrs = topN_freqs[fltr], topN_powrs[fltr]
     
     if len(topN_freqs)==0:
         return dict(top_distinct_freqs=np.array([]), top_distinct_freq_power=np.array([]))
@@ -811,9 +849,13 @@ def lombscargle_stats(times, mags, errors, config, N=30, irreg=True, **ls_kwargs
     LombScargle analysis of lightcurve to extract certain summary statistics
     
     """
-        
+    
+    med_t = np.median(times)
+    poly_fit = np.polyfit(times-med_t,mags,np.int64(config['npoly']),w=1./errors)
+    
     # Initialise model
-    model = LombScargle(times, mags, errors, normalization='standard')
+    model = LombScargle(times, mags - np.poly1d(poly_fit)(times-med_t), errors, 
+                        normalization='standard')
         
     freq, power = model.autopower(**ls_kwargs)
     
@@ -832,7 +874,7 @@ def lombscargle_stats(times, mags, errors, config, N=30, irreg=True, **ls_kwargs
             freq_dict = get_top_frequencies(times, mags, errors, freq, power, config, N)
         
         out = {**freq_dict, **pow_stats}
-    
+        
     else:
         # Find max power and hence most likely period
         periods = 1./freq
