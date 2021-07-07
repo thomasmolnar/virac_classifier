@@ -7,7 +7,7 @@ class variable_classification(classification):
         # ls_period is Lomb-Scargle period, lsq_period is from full Fourier fit using a list of trial LS periods
         
         self.data_cols = ["ks_stdev","ks_mad","ks_kurtosis","ks_skew",
-                           "ks_eta",#"ks_eta_e",
+                           "ks_eta",
                            "ks_stetson_i","ks_stetson_j","ks_stetson_k",
                            "ks_p100_p0","ks_p99_p1","ks_p95_p5","ks_p84_p16","ks_p75_p25",
                            "ks_stdev_over_error","ks_mad_over_error",
@@ -34,13 +34,6 @@ class variable_classification(classification):
                            'J_scale', 'J_model',
                            'H_scale', 'H_model',
                            'model_amplitude'
-#                            'log10_decaps_g_amp','log10_decaps_r_amp','log10_decaps_i_amp','log10_decaps_z_amp',
-#                            'nsc2_rmsvar', 'nsc2_madvar', 'nsc2_iqrvar', 'nsc2_etavar', 'nsc2_jvar', 'nsc2_kvar',
-#                            'nsc2_chivar', 'nsc2_romsvar', 'nsc2_nsigvar'
-#                            'Z_contemp_std','Z_contemp_abs',
-#                            'Y_contemp_std','Y_contemp_abs',
-#                            'J_contemp_std','J_contemp_abs',
-#                            'H_contemp_std','H_contemp_abs'
                          ]
         
         self.periodic_features = ['phi1_phi0','phi2_phi0','phi3_phi0', 
@@ -53,7 +46,7 @@ class variable_classification(classification):
         self.target_cols = ['var_class']
         
         self.log_transform_cols = ["ks_stdev","ks_mad","ks_kurtosis","ks_skew",
-                                   "ks_eta",#"ks_eta_e",
+                                   "ks_eta",
                                    "ks_stetson_i","ks_stetson_j","ks_stetson_k",
                                    "ks_p100_p0","ks_p99_p1","ks_p95_p5","ks_p84_p16","ks_p75_p25",
                                    "ks_stdev_over_error","ks_mad_over_error",
@@ -73,13 +66,6 @@ class variable_classification(classification):
                                    'J_scale', 'J_model',
                                    'H_scale', 'H_model',
                                    'model_amplitude'
-#                                    'log10_decaps_g_amp','log10_decaps_r_amp','log10_decaps_i_amp','log10_decaps_z_amp',
-#                                    'nsc2_rmsvar', 'nsc2_madvar', 'nsc2_iqrvar', 'nsc2_etavar', 'nsc2_jvar', 'nsc2_kvar',
-#                                    'nsc2_chivar', 'nsc2_romsvar', 'nsc2_nsigvar'
-#                                    'Z_contemp_std','Z_contemp_abs',
-#                                    'Y_contemp_std','Y_contemp_abs',
-#                                    'J_contemp_std','J_contemp_abs',
-#                                    'H_contemp_std','H_contemp_abs'
                                   ]
         
         self.training_set = self.run(training_set, plot_name, int(config['var_cores']), xgb=True)

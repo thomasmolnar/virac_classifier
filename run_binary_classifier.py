@@ -30,9 +30,6 @@ def train_classification_region(grid, variable_stars, config, index):
     gaia['detailed_var_class']='CONST'
     gaia['var_class']='CONST'
     
-#     variable_stars = variable_stars[~((variable_stars['detailed_var_class']=='OSARG')|
-#                                       (variable_stars['detailed_var_class']=='DSCT'))].reset_index(drop=True)
-    
     full_data = pd.concat([variable_stars, gaia], axis=0, sort=False)
     
     print('Running classifier for (%s, %s): %i stars'%(grid['l'].values[index], grid['b'].values[index],len(full_data)))

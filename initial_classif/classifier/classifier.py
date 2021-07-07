@@ -132,7 +132,6 @@ class classification(object):
         X_train = self.sc.fit_transform(X_train)
         
         if xgb:
-#             self.model = lightgbm.LGBMClassifier(n_estimators=100, max_depth=8, learning_rate=0.15)
             self.model = xgboost.XGBClassifier(n_estimators=100,
                                                max_depth=8,
                                                learning_rate=0.15,
@@ -195,7 +194,7 @@ class classification(object):
             yinp[self.log_transform_cols] = self.ptransformer.transform(yinp[self.log_transform_cols])
         if self.imputer is not None:
             yinp[self.data_cols] = self.imputer.transform(yinp[self.data_cols].values)
-                
+        
         yinp = self.sc.transform(yinp)
         
         y['class'] = self.model.predict(yinp)
@@ -215,7 +214,7 @@ class binary_classification(classification):
     def __init__(self, training_set, plot_name=None):
         
         self.data_cols = ["ks_stdev","ks_mad","ks_kurtosis","ks_skew",
-                           "ks_eta",#"ks_eta_e",
+                           "ks_eta",
                            "ks_stetson_i","ks_stetson_j","ks_stetson_k",
                            "ks_p100_p0","ks_p99_p1","ks_p95_p5","ks_p84_p16","ks_p75_p25",
                            "ks_stdev_over_error","ks_mad_over_error",

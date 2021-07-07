@@ -734,7 +734,7 @@ def power_stats(power):
     return {'pow_mean_disp':mean_disp}
 
 # # Sidereal and standard day aliases to be removed
-# alias_periods = np.array([0.99726, 0.99999, 0.99726/2., 0.99999/2., 0.99726/3., 0.99999/3., 0.99999/4., 0.99726/4.])
+alias_periods = np.array([0.99726, 0.99999, 0.99726/2., 0.99999/2., 0.99726/3., 0.99999/3., 0.99999/4., 0.99726/4.])
 
 # def get_topN_freq(freq, power, config, N=30, tol=1e-3):
 #     """
@@ -804,7 +804,8 @@ def is_window_function_peak_v2(times, mags, errors, freqs, power):
             (power_window[:len(freqs)]>power)
 
 
-def get_top_frequencies(times, mags, errors, freq, power, config, N=30):
+def get_top_frequencies(times, mags, errors, freq, power, config, N=30,
+                       period_tol=0., freq_max=0.005):
     """
     Retrieve top N frequencies from LombScargle based on power ranking
     
@@ -822,20 +823,24 @@ def get_top_frequencies(times, mags, errors, freq, power, config, N=30):
     
     topN_freqs, topN_powrs = topN_freqs[~is_wf], topN_powrs[~is_wf]
     
-    freq_max = 1./365.
-    long_freq = topN_freqs[topN_freqs<freq_max]
+    short_freq = topN_freqs[topN_freqs<freq_max]
     
-    for lf in long_freq:
+    for sf in short_freq:
         is_wf = is_window_function_peak_fn(times, mags, errors, 
-                                        topN_freqs+lf, 
+                                        topN_freqs+sf, 
                                         topN_powrs)
         fltr = (~is_wf)|(topN_freqs<freq_max)
         topN_freqs, topN_powrs = topN_freqs[fltr], topN_powrs[fltr]
         is_wf = is_window_function_peak_fn(times, mags, errors, 
-                                        topN_freqs-lf, 
+                                        topN_freqs-sf, 
                                         topN_powrs)
         fltr = (~is_wf)|(topN_freqs<freq_max)
         topN_freqs, topN_powrs = topN_freqs[fltr], topN_powrs[fltr]
+
+    if period_tol>0.:
+        for ap in alias_periods:
+            fltr = ~(np.abs(1./topN_freqs-ap)<period_tol)
+            topN_freqs, topN_powrs = topN_freqs[fltr], topN_powrs[fltr]
     
     if len(topN_freqs)==0:
         return dict(top_distinct_freqs=np.array([]), top_distinct_freq_power=np.array([]))
@@ -844,7 +849,8 @@ def get_top_frequencies(times, mags, errors, freq, power, config, N=30):
             'max_pow':topN_powrs[0],
             'ls_period':1./topN_freqs[0]}
 
-def lombscargle_stats(times, mags, errors, config, N=30, irreg=True, **ls_kwargs):
+def lombscargle_stats(times, mags, errors, config, N=30, irreg=True, 
+                      period_tol=0., freq_max=0.005, poly_detrend=True, **ls_kwargs):
     """
     LombScargle analysis of lightcurve to extract certain summary statistics
     
@@ -854,7 +860,7 @@ def lombscargle_stats(times, mags, errors, config, N=30, irreg=True, **ls_kwargs
     poly_fit = np.polyfit(times-med_t,mags,np.int64(config['npoly']),w=1./errors)
     
     # Initialise model
-    model = LombScargle(times, mags - np.poly1d(poly_fit)(times-med_t), errors, 
+    model = LombScargle(times, mags - poly_detrend*np.poly1d(poly_fit)(times-med_t), errors, 
                         normalization='standard')
         
     freq, power = model.autopower(**ls_kwargs)
@@ -864,14 +870,16 @@ def lombscargle_stats(times, mags, errors, config, N=30, irreg=True, **ls_kwargs
     
     if irreg:
         
-        freq_dict = get_top_frequencies(times, mags, errors, freq, power, config, N)
+        freq_dict = get_top_frequencies(times, mags, errors, freq, power, config, N, 
+                                       period_tol=period_tol, freq_max=freq_max)
         Nstep = N
         
         while len(freq_dict['top_distinct_freqs'])==0:
             N+=Nstep
             if(N>1000):
                 break
-            freq_dict = get_top_frequencies(times, mags, errors, freq, power, config, N)
+            freq_dict = get_top_frequencies(times, mags, errors, freq, power, config, N, 
+                                       period_tol=period_tol, freq_max=freq_max)
         
         out = {**freq_dict, **pow_stats}
         
@@ -1054,7 +1062,11 @@ def find_peak_ratio_model(results, min_phase, second_minimum, min_phase_2):
         return 1.
 
 def _ivw(mag, errors, lc_min, fltr):
-    return np.nansum(((mag-lc_min)/errors**2)[fltr]) / np.nansum((1./errors**2)[fltr])
+    mag_errors = np.nansum(((mag-lc_min)/errors**2)[fltr])
+    sum_errors = np.nansum((1./errors**2)[fltr])
+    if ~np.isfinite(mag_errors) or ~np.isfinite(sum_errors) or sum_errors==0.:
+        return np.nan
+    return mag_errors / sum_errors
 
 def find_peak_ratio_data(times, mag, errors, results, min_phase, second_minimum, min_phase_2, min_bin_size=0.05, Ndatapoints=3):
     '''

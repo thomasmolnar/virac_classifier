@@ -134,8 +134,8 @@ def classify_region(grid, variable_classifier, lightcurve_loader,
     if(len(input_data)==0):
         return 
 
-    if int(config['test']):
-        input_data = input_data.sample(10000, random_state=42)
+#     if int(config['test']):
+#         input_data = input_data.sample(100, random_state=42)
     
     logging.info('Healpix {0}: Running binary classifier for {1} lightcurves. Predicted finish time: {2}'.format(
                  hpx_table_index, len(input_data), datetime.now()+timedelta(seconds=0.6*0.2*len(input_data)))) 
@@ -144,7 +144,7 @@ def classify_region(grid, variable_classifier, lightcurve_loader,
     
     def run_cell(index):
         with warnings.catch_warnings():
-            logging.warn('Healpix {0}: Suppressing sklearn pickle warnings for binary classifier'.format(hpx_table_index)) 
+            logging.warning('Healpix {0}: Suppressing sklearn pickle warnings for binary classifier'.format(hpx_table_index)) 
             warnings.simplefilter("ignore")
             with open(config['binary_output_dir'] + 'binary_%i.pkl'%index, 'rb') as f:
                 binary_classifier = pickle.load(f)
@@ -181,21 +181,21 @@ def classify_region(grid, variable_classifier, lightcurve_loader,
    
     variable_output = {}
 
-    for fap_cut in variable_classifier: 
-        variable_output[fap_cut] = variable_classifier[fap_cut].predict(variable_candidates)
+    for fap_cut in [-10,0]: 
+        variable_output['fap_%i'%fap_cut] = variable_classifier['fap_%i'%fap_cut].predict(variable_candidates).copy()
     for s in ['class', 'prob', 'prob_var']:
-        variable_output[-10][s+'_nofap'] = variable_output[0][s]
-
-    variable_output[-10][save_cols].astype(save_cols_types).to_csv(output_file, index=False)
-    
-    final_time = time.time()
+        variable_output['fap_-10'][s+'_nofap'] = variable_output['fap_0'][s].values
     
     output_ = ''
-    for ii in list(set(np.unique(variable_output[-10]['class']))-set(['CONST'])):
-        output_+='{0}:{1},'.format(ii, np.count_nonzero((variable_output[-10]['class']==ii)&
-                                                        (variable_output[-10]['log10_fap']<np.float64(config['log10_fap']))&
-                                                        (variable_output[-10]['prob']>0.8)))
+    for ii in list(set(np.unique(variable_output['fap_-10']['class'])).union(set(['CONST']))):
+        output_+='{0}:{1},'.format(ii, np.count_nonzero(variable_output['fap_0']['class']==ii))
+        
     output_ = output_[:-1]
+
+    variable_output['fap_-10'] = variable_output['fap_-10'][variable_output['fap_-10']['class_nofap']!='CONST'].reset_index(drop=True)
+    variable_output['fap_-10'][save_cols].astype(save_cols_types).to_csv(output_file, index=False)
+    
+    final_time = time.time()
     
     logging.info('Healpix {0}: finished, run in {1}s: {2}'.format(hpx_table_index, final_time-initial_time, output_))
     
@@ -211,7 +211,7 @@ if __name__=="__main__":
     np.random.shuffle(indices)
   
     if int(config['test']):
-        chunked_indices_subset = [7380776] * int(config['var_cores'])
+        chunked_indices_subset = [7380776] #* int(config['var_cores'])
         chunk_index=0
     else:
         assert len(sys.argv)==3
@@ -225,11 +225,12 @@ if __name__=="__main__":
     
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        logging.warn('Suppressing XGB & sklearn pickle warnings for variable classifier') 
+        logging.warning('Suppressing XGB & sklearn pickle warnings for variable classifier') 
         variable_classifier = {}
         for fap_cut in [-10, 0]:
             with open(config['variable_output_dir'] + 'variable_classifier_%i.pkl' % fap_cut, 'rb') as f:
-                variable_classifier[fap_cut] = pickle.load(f)
+                variable_classifier['fap_%i'%fap_cut] = pickle.load(f)
+                
     grid = pd.read_pickle(config['binary_output_dir'] + 'grid.pkl')
     
     with Pool(np.int64(config['var_cores'])) as pool:

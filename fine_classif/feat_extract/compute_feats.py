@@ -308,8 +308,11 @@ def contemp_mag_scatter_ratio(lc, lc_ref, tthresh=1./24.):
     if Kscatter > mean_k_err**2:
         Kscatter -= mean_k_err**2
     
-    abs_ratio = ivw_(np.abs((Jmag[fltrT]-meanJ)/(Kmag[tamin][fltrT]-meanK)), 
-                     np.sqrt(Jmag_err[fltrT]*Kmag_err[tamin][fltrT]))
+    if(np.any(Kmag[tamin][fltrT]-meanK)!=0.):
+        abs_ratio = ivw_(np.abs((Jmag[fltrT]-meanJ)/(Kmag[tamin][fltrT]-meanK)), 
+                         np.sqrt(Jmag_err[fltrT]*Kmag_err[tamin][fltrT]))
+    else:
+        abs_ratio = np.nan
 
     return np.sqrt(Jscatter / Kscatter), abs_ratio
 
@@ -386,7 +389,7 @@ class timer(object):
         print(strr, tt.time()-self.time)
         self.time=tt.time()
 
-def source_feat_extract(data, config, ls_kwargs={}, method_kwargs={}):
+def source_feat_extract(data, config, ls_kwargs={}, method_kwargs={}, lomb_kwargs={}):
     """
     Wrapper to extract all features for a given
     source light curve (panda format).
@@ -407,7 +410,7 @@ def source_feat_extract(data, config, ls_kwargs={}, method_kwargs={}):
     ['sourceid' 'mjdobs' 'mag' 'error' 'ambiguous_match' 'ast_res_chisq' 'chi']
     
     """
-    #T = timer()
+    
     ra, dec, lc_all = data
     
     sourceid = lc_all['sourceid'].to_numpy()[0]
@@ -444,20 +447,20 @@ def source_feat_extract(data, config, ls_kwargs={}, method_kwargs={}):
     if int(config['force_method']):
        # Division into irregular grid input for LSQ computation 
         if method_kwargs['irreg']:
-            per_dict = lombscargle_stats(times, mags, errors, config, **ls_kwargs)
+            per_dict = lombscargle_stats(times, mags, errors, config, **lomb_kwargs, **ls_kwargs)
             if len(per_dict['top_distinct_freqs'])==0:
                 return {'sourceid':sourceid, 'error':True, 'n_epochs':len(lc_clean), 'significant_second_minimum':False}
 
             # Top N LS frequency grid and half multiple
             freqs = np.array(per_dict['top_distinct_freqs'])
             freq_dict = dict(freq_grid=
-                             np.concatenate((.5*freqs[.5*freqs>ls_kwargs['minimum_frequency']],freqs))) 
+                             np.concatenate((.5*freqs[.5*freqs>ls_kwargs['minimum_frequency']],freqs)))
             per_feats = periodic_feats_force(times, mags, errors, freq_dict=freq_dict,
                                              nterms_min=nterms_min, nterms_max=nterms_max,
                                              npoly=npoly)
             #T.done("Period")             
         else:
-            per_dict = lombscargle_stats(times, mags, errors, config, irreg=False, **ls_kwargs)
+            per_dict = lombscargle_stats(times, mags, errors, config, irreg=False, **lomb_kwargs, **ls_kwargs)
             
             period = per_dict['ls_period']
             freq_dict = dict(f0=1./(2*period), f1=1./period, Nf=2) # Forced frequency grid

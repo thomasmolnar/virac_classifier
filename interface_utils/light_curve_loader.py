@@ -97,6 +97,9 @@ class lightcurve_loader(object):
                 del data[1]
                 del cols[1]
                 df = Table(data, names=cols)
+#                 df['mjdobs'] = df['mjdobs'].astype(np.float64)
+#                 df['hfad_mag'] = df['hfad_mag'].astype(np.float64)
+#                 df['hfad_emag'] = df['hfad_emag'].astype(np.float64)
                 filter_dict = {'Z':1,'Y':2,'J':3,'H':4,'Ks':5}
                 df['filterid'] = [filter_dict[f] for f in df['filter']]
                 del df['filter']

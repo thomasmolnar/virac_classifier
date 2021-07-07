@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from multiprocessing import Pool
 from functools import partial
+import time as tt
 
 from .compute_feats import source_feat_extract
 from .extinction_map import extinction_map_healpix
