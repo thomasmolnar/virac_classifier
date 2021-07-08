@@ -91,7 +91,6 @@ save_cols = [
     'phi_0','phi_1','phi_2','phi_3',
     'phi_double_0','phi_double_1','phi_double_2','phi_double_3',
     'peak_ratio_model', 'peak_ratio_data',
-    'model_amplitude',
     'JK_col','HK_col', 'prob_1st_stage',
     'Z_scale','Z_model','Y_scale','Y_model','J_scale','J_model','H_scale','H_model'
 ]
@@ -104,7 +103,6 @@ col32_save = [
     'phi_0','phi_1','phi_2','phi_3',
     'phi_double_0','phi_double_1','phi_double_2','phi_double_3',           
     'peak_ratio_model', 'peak_ratio_data',
-    'model_amplitude',
     'JK_col','HK_col','prob', 'prob_var', 'prob_nofap', 'prob_var_nofap', 'prob_1st_stage',
     'Z_scale','Z_model','Y_scale','Y_model','J_scale','J_model','H_scale','H_model'
 ]
