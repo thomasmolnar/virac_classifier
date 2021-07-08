@@ -822,7 +822,6 @@ def get_top_frequencies(times, mags, errors, freq, power, config, N=30,
                                     topN_powrs)
     
     topN_freqs, topN_powrs = topN_freqs[~is_wf], topN_powrs[~is_wf]
-    print(1./topN_freqs)
     
     short_freq = topN_freqs[topN_freqs<freq_max]
     
@@ -842,7 +841,6 @@ def get_top_frequencies(times, mags, errors, freq, power, config, N=30,
         for ap in alias_periods:
             fltr = ~(np.abs(1./topN_freqs-ap)<period_tol)
             topN_freqs, topN_powrs = topN_freqs[fltr], topN_powrs[fltr]
-    print(1./topN_freqs)
     
     if len(topN_freqs)==0:
         return dict(top_distinct_freqs=np.array([]), top_distinct_freq_power=np.array([]))
