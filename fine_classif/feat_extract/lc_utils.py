@@ -805,7 +805,7 @@ def is_window_function_peak_v2(times, mags, errors, freqs, power):
 
 
 def get_top_frequencies(times, mags, errors, freq, power, config, N=30,
-                       period_tol=0., freq_max=0.005):
+                       period_tol=0., freq_tol=0.,freq_max=0.005,nmax=2):
     """
     Retrieve top N frequencies from LombScargle based on power ranking
     
@@ -817,31 +817,37 @@ def get_top_frequencies(times, mags, errors, freq, power, config, N=30,
     
     is_window_function_peak_fn = is_window_function_peak#_v2
     
-    is_wf = is_window_function_peak_fn(times, mags, errors, 
-                                    topN_freqs, 
-                                    topN_powrs)
-    
-    topN_freqs, topN_powrs = topN_freqs[~is_wf], topN_powrs[~is_wf]
+    for n in range(1,nmax):
+        is_wf = is_window_function_peak_fn(times, mags, errors, 
+                                        topN_freqs / n, 
+                                        topN_powrs)
+
+        topN_freqs, topN_powrs = topN_freqs[~is_wf], topN_powrs[~is_wf]
     
     short_freq = topN_freqs[topN_freqs<freq_max]
     
     for sf in short_freq:
-        is_wf = is_window_function_peak_fn(times, mags, errors, 
-                                        topN_freqs+sf, 
-                                        topN_powrs)
-        fltr = (~is_wf)|(topN_freqs<freq_max)
-        topN_freqs, topN_powrs = topN_freqs[fltr], topN_powrs[fltr]
-        is_wf = is_window_function_peak_fn(times, mags, errors, 
-                                        topN_freqs-sf, 
-                                        topN_powrs)
-        fltr = (~is_wf)|(topN_freqs<freq_max)
-        topN_freqs, topN_powrs = topN_freqs[fltr], topN_powrs[fltr]
+        for n in range(1,nmax):
+            is_wf = is_window_function_peak_fn(times, mags, errors, 
+                                            (topN_freqs+sf)/n, 
+                                            topN_powrs)
+            fltr = (~is_wf)|(topN_freqs<freq_max)
+            topN_freqs, topN_powrs = topN_freqs[fltr], topN_powrs[fltr]
+            is_wf = is_window_function_peak_fn(times, mags, errors, 
+                                            (topN_freqs-sf)/n, 
+                                            topN_powrs)
+            fltr = (~is_wf)|(topN_freqs<freq_max)
+            topN_freqs, topN_powrs = topN_freqs[fltr], topN_powrs[fltr]
         
     if period_tol>0.:
         for ap in alias_periods:
             fltr = ~(np.abs(1./topN_freqs-ap)<period_tol)
             topN_freqs, topN_powrs = topN_freqs[fltr], topN_powrs[fltr]
-    
+    if freq_tol>0.:
+        for ap in alias_periods:
+            fltr = ~(np.abs(topN_freqs-1./ap)<freq_tol)
+            topN_freqs, topN_powrs = topN_freqs[fltr], topN_powrs[fltr]
+
     if len(topN_freqs)==0:
         return dict(top_distinct_freqs=np.array([]), top_distinct_freq_power=np.array([]))
     
