@@ -1,8 +1,10 @@
 # Hierarchical classifier of virac2 catalogue into variable subtypes.
 
-Code related to the publication Molnar, Sanders et al. (2021)
+Code related to the publication Molnar, Sanders et al. (2021).
 
-Dependent on interface with Hertforshire cluster and healpixel hdf5 archives data structure. 
+The corresponding catalogue is available at [https://people.ast.cam.ac.uk/~jls/data/vproject/vivace_catalogue.fits](https://people.ast.cam.ac.uk/~jls/data/vproject/vivace_catalogue.fits).
+
+Dependent on interface with Hertfordshire cluster and healpixel hdf5 archives data structure. 
 
 ## Main outline is as follows:
 
